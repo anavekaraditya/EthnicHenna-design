@@ -52,6 +52,24 @@ function Lightbox({ selected, onClose, onPrevious, onNext }) {
   const dialogRef = useRef(null)
   const closeRef = useRef(null)
   const touchStart = useRef(null)
+  const whatsappHref = `https://wa.me/${whatsappNumber}?text=${whatsappMessage({ ...selected.design, price: selected.collection.price })}`
+
+  const sendDesignToArtist = async (event) => {
+    event.preventDefault()
+    const message = `Hi Deepali, I’m interested in design ${selected.design.id} from the $${selected.collection.price} collection.`
+    try {
+      const response = await fetch(selected.design.src)
+      const blob = await response.blob()
+      const file = new File([blob], `${selected.design.id}.jpg`, { type: blob.type || 'image/jpeg' })
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], text: message, title: `Henna design ${selected.design.id}` })
+        return
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError') return
+    }
+    window.open(whatsappHref, '_blank', 'noopener,noreferrer')
+  }
 
   useEffect(() => {
     const previousFocus = document.activeElement
@@ -79,7 +97,7 @@ function Lightbox({ selected, onClose, onPrevious, onNext }) {
       <div className="lightbox" role="dialog" aria-modal="true" aria-label={`Design ${selected.design.id}`} ref={dialogRef} onTouchStart={(event) => { touchStart.current = event.changedTouches[0].clientX }} onTouchEnd={(event) => { const start = touchStart.current; const end = event.changedTouches[0].clientX; if (start && Math.abs(start - end) > 45) start > end ? onNext() : onPrevious(); touchStart.current = null }}>
         <div className="lightbox-toolbar"><span className="lightbox-position">{selected.index + 1} / {selected.collection.designs.length}</span><button className="icon-button" onClick={onClose} ref={closeRef} aria-label="Close design preview"><CloseIcon /></button></div>
         <div className="lightbox-image-frame"><img src={selected.design.src} alt={selected.design.alt} /></div>
-        <div className="lightbox-details"><div><span className="eyebrow">Design {selected.design.id}</span><h2>{selected.collection.label} collection</h2></div><a className="whatsapp-button" href={`https://wa.me/${whatsappNumber}?text=${whatsappMessage({ ...selected.design, price: selected.collection.price })}`} target="_blank" rel="noreferrer"><WhatsAppIcon /> Ask about this design</a></div>
+        <div className="lightbox-details"><div><span className="eyebrow">Design {selected.design.id}</span><h2>{selected.collection.label} collection</h2></div><a className="whatsapp-button" href={whatsappHref} onClick={sendDesignToArtist}><WhatsAppIcon /> Send it to artist</a></div>
         <div className="lightbox-nav"><button className="nav-button" onClick={onPrevious} aria-label="Previous design"><ArrowIcon direction="left" /> Previous</button><button className="nav-button" onClick={onNext} aria-label="Next design">Next <ArrowIcon /></button></div>
       </div>
     </div>
@@ -100,8 +118,7 @@ function App() {
     <>
       <header className="site-header"><a className="wordmark" href="#top" aria-label="Ethnic Henna by Deepali home"><span className="wordmark-mark">E</span><span><strong>Deepali</strong><small>Henna Artist</small></span></a><a className="header-whatsapp" href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer"><WhatsAppIcon /> <span>WhatsApp</span></a></header>
       <main id="top">
-        <section className="hero"><div className="hero-copy"><p className="eyebrow reveal">Ethnic. Henna by Deepali</p><h1 className="reveal reveal-delay-1">Find a design<br /><em>that feels like you.</em></h1><p className="hero-intro reveal reveal-delay-2">A curated collection of handpicked henna designs, arranged by price and ready for your next celebration.</p><a href="#collections" className="hero-link reveal reveal-delay-3">Browse the collections <ArrowIcon /></a></div><div className="hero-art" aria-hidden="true"><span className="arch"></span><span className="arch-inner"></span><span className="hero-sparkle sparkle-one">✦</span><span className="hero-sparkle sparkle-two">✧</span><span className="hero-note">Made with intention<br />in the Bay Area</span></div></section>
-        <section className="trust-strip" aria-label="Why choose this collection"><span><i>01</i> Real portfolio designs</span><span><i>02</i> Clear, simple pricing</span><span><i>03</i> Easy WhatsApp inquiry</span></section>
+        <section className="hero"><div className="hero-copy"><p className="eyebrow reveal">Ethnic. Henna by Deepali</p><h1 className="reveal reveal-delay-1">Find a design<br /><em>that feels like you.</em></h1><p className="hero-intro reveal reveal-delay-2">A curated collection of handpicked henna designs, arranged by price and ready for your next celebration.</p><a href="#collections" className="hero-link reveal reveal-delay-3">Browse the collections <ArrowIcon /></a></div><div className="hero-photo reveal reveal-delay-2"><img src="./25/IMG_0331.jpg" alt="Henna design from Deepali's portfolio" /><span>Deepali's portfolio</span></div></section>
         <section className="collections-section" id="collections"><div className="section-heading"><div><p className="eyebrow">Choose your collection</p><h2>Three ways to wear<br /><em>your story.</em></h2></div><p>Start with a price point, then tap any design to see it up close.</p></div><div className="collection-grid">{collections.map((collection) => <CollectionCard key={collection.price} collection={collection} onSelect={selectCollection} />)}</div></section>
         {activeCollection && <section className="gallery-section" ref={galleryRef} id="gallery" aria-labelledby="gallery-title"><div className="gallery-heading"><div><p className="eyebrow">Your selection</p><h2 id="gallery-title">The {activeCollection.label} collection</h2></div><button className="change-collection" onClick={() => { setActivePrice(null); document.querySelector('#collections')?.scrollIntoView({ behavior: 'smooth' }) }}>Change price <span>↗</span></button></div><div className="gallery-grid">{activeCollection.designs.map((design, index) => <button className="design-tile" key={design.id} onClick={() => openDesign(activeCollection, index)} aria-label={`Open design ${design.id}, ${activeCollection.label}`}><img src={design.src} alt={design.alt} loading="lazy" /><span className="design-number">{design.id}</span><span className="view-design">View <ArrowIcon /></span></button>)}</div></section>}
         <section className="closing-section"><div className="closing-mark">✦</div><p className="eyebrow">The final touch</p><h2>Found one<br /><em>you love?</em></h2><p>Send Deepali the design number on WhatsApp and start your conversation.</p><a className="whatsapp-button whatsapp-button-dark" href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer"><WhatsAppIcon /> Say hello on WhatsApp</a></section>
