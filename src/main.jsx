@@ -20,7 +20,7 @@ const collections = Object.entries(imageFiles).map(([price, files]) => ({
 }))
 
 const whatsappNumber = '15103408849'
-const whatsappMessage = (design) => encodeURIComponent(`Hi Deepali, I’m interested in design ${design.id} from the $${design.price} collection.`)
+const whatsappMessage = (design, imageUrl) => encodeURIComponent(`Hi Deepali, I’m interested in design ${design.id} from the $${design.price} collection.\n\nImage: ${imageUrl}`)
 
 function ArrowIcon({ direction = 'right' }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" className={`icon icon-${direction}`}><path d="M5 12h14M13 6l6 6-6 6" /></svg>
@@ -52,24 +52,8 @@ function Lightbox({ selected, onClose, onPrevious, onNext }) {
   const dialogRef = useRef(null)
   const closeRef = useRef(null)
   const touchStart = useRef(null)
-  const whatsappHref = `https://wa.me/${whatsappNumber}?text=${whatsappMessage({ ...selected.design, price: selected.collection.price })}`
-
-  const sendDesignToArtist = async (event) => {
-    event.preventDefault()
-    const message = `Hi Deepali, I’m interested in design ${selected.design.id} from the $${selected.collection.price} collection.`
-    try {
-      const response = await fetch(selected.design.src)
-      const blob = await response.blob()
-      const file = new File([blob], `${selected.design.id}.jpg`, { type: blob.type || 'image/jpeg' })
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], text: message, title: `Henna design ${selected.design.id}` })
-        return
-      }
-    } catch (error) {
-      if (error?.name === 'AbortError') return
-    }
-    window.open(whatsappHref, '_blank', 'noopener,noreferrer')
-  }
+  const imageUrl = new URL(selected.design.src, window.location.href).href
+  const whatsappHref = `https://wa.me/${whatsappNumber}?text=${whatsappMessage({ ...selected.design, price: selected.collection.price }, imageUrl)}`
 
   useEffect(() => {
     const previousFocus = document.activeElement
@@ -97,7 +81,7 @@ function Lightbox({ selected, onClose, onPrevious, onNext }) {
       <div className="lightbox" role="dialog" aria-modal="true" aria-label={`Design ${selected.design.id}`} ref={dialogRef} onTouchStart={(event) => { touchStart.current = event.changedTouches[0].clientX }} onTouchEnd={(event) => { const start = touchStart.current; const end = event.changedTouches[0].clientX; if (start && Math.abs(start - end) > 45) start > end ? onNext() : onPrevious(); touchStart.current = null }}>
         <div className="lightbox-toolbar"><span className="lightbox-position">{selected.index + 1} / {selected.collection.designs.length}</span><button className="icon-button" onClick={onClose} ref={closeRef} aria-label="Close design preview"><CloseIcon /></button></div>
         <div className="lightbox-image-frame"><img src={selected.design.src} alt={selected.design.alt} /></div>
-        <div className="lightbox-details"><div><span className="eyebrow">Design {selected.design.id}</span><h2>{selected.collection.label} collection</h2></div><a className="whatsapp-button" href={whatsappHref} onClick={sendDesignToArtist}><WhatsAppIcon /> Send it to artist</a></div>
+        <div className="lightbox-details"><div><span className="eyebrow">Design {selected.design.id}</span><h2>{selected.collection.label} collection</h2></div><a className="whatsapp-button" href={whatsappHref} target="_blank" rel="noreferrer"><WhatsAppIcon /> Send it to artist</a></div>
         <div className="lightbox-nav"><button className="nav-button" onClick={onPrevious} aria-label="Previous design"><ArrowIcon direction="left" /> Previous</button><button className="nav-button" onClick={onNext} aria-label="Next design">Next <ArrowIcon /></button></div>
       </div>
     </div>
