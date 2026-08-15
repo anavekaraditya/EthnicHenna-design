@@ -20,7 +20,8 @@ const collections = Object.entries(imageFiles).map(([price, files]) => ({
 }))
 
 const whatsappNumber = '15103408849'
-const whatsappMessage = (design, imageUrl) => encodeURIComponent(`Hi Deepali, I’m interested in design ${design.id} from the $${design.price} collection.\n\nImage: ${imageUrl}`)
+const venmoLink = 'https://venmo.com/code?user_id=2414993068785664394&created=1774645132.445458'
+const whatsappMessage = (design, imageUrl) => encodeURIComponent(`Hi Deepali, I’m interested in design ${design.id} from the $${design.price} collection.\n\nImage: ${imageUrl}\n\n— PAYMENT OPTIONS —\nVenmo: ${venmoLink}\nZelle: ${whatsappNumber}\n\n— PAYMENT CONFIRMATION —\nAfter completing payment, please share a screenshot of your payment confirmation here.`)
 
 function ArrowIcon({ direction = 'right' }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" className={`icon icon-${direction}`}><path d="M5 12h14M13 6l6 6-6 6" /></svg>
