@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client'
 import './styles.css'
 
 const imageFiles = {
-  15: ['IMG_0446.jpg', 'IMG_0579.jpg', 'IMG_1073.jpg', 'IMG_1566.jpg', 'IMG_3456.jpg', 'IMG_3457.jpg', 'IMG_3514.jpg', 'IMG_4387.jpg', 'IMG_4631.jpg', 'IMG_5205.jpg', 'IMG_5901.jpg', 'IMG_6011.jpg', 'IMG_8020.jpg', 'IMG_9332.jpg'],
-  20: ['IMG_0298.jpg', 'IMG_0445.jpg', 'IMG_0641.jpg', 'IMG_0845.jpg', 'IMG_0847.jpg', 'IMG_0849.jpg', 'IMG_2640.jpg', 'IMG_2878.jpg', 'IMG_3047.jpg', 'IMG_5083.jpg', 'IMG_5084.jpg', 'IMG_9821.jpg'],
+  15: ['IMG_0579.jpg', 'IMG_1073.jpg', 'IMG_1566.jpg', 'IMG_3456.jpg', 'IMG_3457.jpg', 'IMG_3514.jpg', 'IMG_4387.jpg', 'IMG_4631.jpg', 'IMG_5205.jpg', 'IMG_5901.jpg', 'IMG_6011.jpg', 'IMG_8020.jpg', 'IMG_9332.jpg'],
+  20: ['IMG_0446.jpg', 'IMG_0298.jpg', 'IMG_0445.jpg', 'IMG_0641.jpg', 'IMG_0845.jpg', 'IMG_0847.jpg', 'IMG_0849.jpg', 'IMG_2640.jpg', 'IMG_2878.jpg', 'IMG_3047.jpg', 'IMG_5083.jpg', 'IMG_5084.jpg', 'IMG_9821.jpg'],
   25: ['IMG_0331.jpg', 'IMG_1001.jpg', 'IMG_1183.jpg', 'IMG_2267.jpg', 'IMG_2555.jpg', 'IMG_2640.jpg', 'IMG_3595.jpg', 'IMG_8102.jpg', 'IMG_9089.jpg', 'IMG_9819.jpg'],
 }
 
