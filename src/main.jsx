@@ -167,6 +167,8 @@ function AdminDashboard({ onLogout }) {
   const [showAddCategory, setShowAddCategory] = useState(false)
   const [editingDesignIndex, setEditingDesignIndex] = useState(null)
   const [draggedIndex, setDraggedIndex] = useState(null)
+  const [touchOffset, setTouchOffset] = useState(0)
+  const touchDrag = useRef(null)
   const importRef = useRef(null)
   const activeCollection = collections.find((collection) => String(collection.price) === String(selectedPrice))
   const editingDesign = activeCollection?.designs[editingDesignIndex]
@@ -224,13 +226,46 @@ function AdminDashboard({ onLogout }) {
   }
 
   const reorderDesign = (fromIndex, toIndex) => {
-    if (fromIndex === null || fromIndex === toIndex || !activeCollection) return
+    if (fromIndex === null || fromIndex === toIndex || !activeCollection) {
+      setDraggedIndex(null)
+      return
+    }
     const nextDesigns = [...activeCollection.designs]
     const [movedDesign] = nextDesigns.splice(fromIndex, 1)
     nextDesigns.splice(toIndex, 0, movedDesign)
     const renumbered = renumberDesigns(activeCollection.price, nextDesigns)
     updateCollections(collections.map((collection) => collection.price === activeCollection.price ? { ...collection, designs: renumbered } : collection), 'Picture order updated.')
     setDraggedIndex(null)
+  }
+
+  const beginTouchDrag = (index) => {
+    touchDrag.current = { from: index, to: index, startY: null }
+    setDraggedIndex(index)
+  }
+
+  const updateTouchDrag = (event) => {
+    if (!touchDrag.current) return
+    event.preventDefault()
+    const touchY = event.touches[0]?.clientY
+    if (touchDrag.current.startY === null) touchDrag.current.startY = touchY
+    setTouchOffset(touchY - touchDrag.current.startY)
+    const rows = [...document.querySelectorAll('.admin-design-row')]
+    const targetIndex = rows.findIndex((row) => {
+      const bounds = row.getBoundingClientRect()
+      return touchY >= bounds.top && touchY <= bounds.bottom
+    })
+    if (targetIndex >= 0) {
+      touchDrag.current.to = targetIndex
+      setDraggedIndex(targetIndex)
+    }
+  }
+
+  const finishTouchDrag = () => {
+    if (!touchDrag.current) return
+    const { from, to } = touchDrag.current
+    touchDrag.current = null
+    setTouchOffset(0)
+    reorderDesign(from, to)
   }
 
   const moveDesignToCategory = (targetPrice) => {
@@ -292,8 +327,8 @@ function AdminDashboard({ onLogout }) {
         <div className="admin-title-row"><div><p className="eyebrow">Artist dashboard</p><h1>Make it yours,<br /><em>one design at a time.</em></h1></div><span className="admin-status">Saved privately</span></div>
         <p className="admin-intro admin-wide-intro">Choose a collection to add pictures or change their order. Updates are saved on this device.</p>
         {notice && <p className="admin-notice" role="status">{notice}</p>}
-        <div className="admin-toolbar"><div className="admin-category-tabs" role="tablist" aria-label="Collections">{collections.map((collection) => <button key={collection.price} className={collection.price === activeCollection?.price ? 'is-active' : ''} onClick={() => setSelectedPrice(collection.price)} role="tab" aria-selected={collection.price === activeCollection?.price}>{collection.label}<small>{collection.designs.length} designs</small></button>)}<button className="admin-new-category-tab" onClick={() => setShowAddCategory(true)} aria-label="Create a new category">＋<small>New category</small></button></div><div className="admin-toolbar-actions"><button className="admin-add-category-cta" onClick={() => setShowAddCategory(true)}>+ Add new category</button><label className="admin-upload-button">+ Add pictures<input type="file" accept="image/*" multiple onChange={addImages} disabled={!activeCollection} /></label></div></div>
-        {activeCollection && <section className="admin-collection-panel" aria-labelledby="admin-collection-title"><div className="admin-panel-heading"><div><p className="eyebrow">Editing collection</p><h2 id="admin-collection-title">{activeCollection.label}</h2></div><div className="admin-panel-meta"><span>{activeCollection.designs.length} designs</span><button className="admin-remove-category" onClick={() => setCategoryToDelete(activeCollection)} disabled={collections.length === 1}>Remove category</button></div></div>{activeCollection.designs.length ? <div className="admin-design-list" aria-label="Drag pictures to change their order">{activeCollection.designs.map((design, index) => <article className={`admin-design-row ${draggedIndex === index ? 'is-dragging' : ''}`} key={`${design.id}-${index}`} draggable onDragStart={() => setDraggedIndex(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => reorderDesign(draggedIndex, index)} onDragEnd={() => setDraggedIndex(null)}><button className="admin-design-thumb" onClick={() => setEditingDesignIndex(index)} aria-label={`Open options for ${design.id}`}><img src={design.src} alt="" /><span>Tap to edit</span></button><div className="admin-design-info"><strong>{design.id}</strong><span>Position {index + 1} · Drag to reorder</span></div><div className="admin-row-actions"><button onClick={() => moveDesign(index, -1)} disabled={index === 0} aria-label={`Move ${design.id} up`}>↑</button><button onClick={() => moveDesign(index, 1)} disabled={index === activeCollection.designs.length - 1} aria-label={`Move ${design.id} down`}>↓</button><button className="admin-remove" onClick={() => setEditingDesignIndex(index)} aria-label={`Open options for ${design.id}`}>×</button></div></article>)}</div> : <div className="admin-empty"><p>No designs here yet.</p><label className="admin-primary-button">Choose pictures<input type="file" accept="image/*" multiple onChange={addImages} /></label></div>}</section>}
+        <div className="admin-toolbar"><div className="admin-category-tabs" role="tablist" aria-label="Collections">{collections.map((collection) => <button key={collection.price} className={collection.price === activeCollection?.price ? 'is-active' : ''} onClick={() => setSelectedPrice(collection.price)} role="tab" aria-selected={collection.price === activeCollection?.price}>{collection.label}<small>{collection.designs.length} designs</small></button>)}<button className="admin-new-category-tab" onClick={() => setShowAddCategory(true)} aria-label="Create a new category">＋<small>New category</small></button></div><div className="admin-toolbar-actions"><label className="admin-upload-button">+ Add pictures<input type="file" accept="image/*" multiple onChange={addImages} disabled={!activeCollection} /></label></div></div>
+        {activeCollection && <section className="admin-collection-panel" aria-labelledby="admin-collection-title"><div className="admin-panel-heading"><div><p className="eyebrow">Editing collection</p><h2 id="admin-collection-title">{activeCollection.label}</h2></div><div className="admin-panel-meta"><span>{activeCollection.designs.length} designs</span><button className="admin-remove-category" onClick={() => setCategoryToDelete(activeCollection)} disabled={collections.length === 1}>Remove category</button></div></div>{activeCollection.designs.length ? <div className="admin-design-list" aria-label="Drag cards to change their order">{activeCollection.designs.map((design, index) => <article className={`admin-design-row ${draggedIndex === index ? 'is-dragging' : ''}`} style={draggedIndex === index && touchDrag.current ? { transform: `translateY(${touchOffset}px) scale(1.02)` } : undefined} key={`${design.id}-${index}`} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; setDraggedIndex(index) }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); reorderDesign(draggedIndex, index) }} onDragEnd={() => setDraggedIndex(null)} onTouchStart={() => beginTouchDrag(index)} onTouchMove={updateTouchDrag} onTouchEnd={finishTouchDrag}><button className="admin-design-thumb" onClick={() => setEditingDesignIndex(index)} aria-label={`Open options for ${design.id}`}><img src={design.src} alt="" /><span>Tap to edit</span></button><div className="admin-design-info"><strong>{design.id}</strong><span>Position {index + 1}</span><small>Drag card to reorder</small></div><div className="admin-row-actions"><button onClick={() => moveDesign(index, -1)} disabled={index === 0} aria-label={`Move ${design.id} up`}>↑</button><button onClick={() => moveDesign(index, 1)} disabled={index === activeCollection.designs.length - 1} aria-label={`Move ${design.id} down`}>↓</button><button className="admin-remove" onClick={() => setEditingDesignIndex(index)} aria-label={`Open options for ${design.id}`}>×</button></div></article>)}</div> : <div className="admin-empty"><p>No designs here yet.</p><label className="admin-primary-button">Choose pictures<input type="file" accept="image/*" multiple onChange={addImages} /></label></div>}</section>}
         <section className="admin-backups"><div><p className="eyebrow">Keep a copy</p><h2>Backup your menu</h2><p>Download your changes before switching devices.</p></div><div className="admin-backup-actions"><button className="admin-secondary-button" onClick={exportBackup}>Download backup</button><button className="admin-text-button" onClick={() => importRef.current?.click()}>Restore backup</button><input ref={importRef} type="file" accept="application/json" onChange={importBackup} /></div></section>
       </section>
       {showAddCategory && <div className="admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAddCategory(false) }}><div className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="add-category-title"><button className="admin-dialog-close" onClick={() => setShowAddCategory(false)} aria-label="Close new category form">×</button><p className="eyebrow">Grow your menu</p><h2 id="add-category-title">Create a new category</h2><form className="admin-category-dialog-form" onSubmit={addCategory}><label>Price<input type="number" min="1" step="1" placeholder="30" value={categoryForm.price} onChange={(event) => setCategoryForm({ ...categoryForm, price: event.target.value })} required /></label><label>Description <span>(optional)</span><input type="text" placeholder="Detailed designs for special occasions" value={categoryForm.description} onChange={(event) => setCategoryForm({ ...categoryForm, description: event.target.value })} /></label><div className="admin-dialog-actions"><button className="admin-secondary-button" type="button" onClick={() => setShowAddCategory(false)}>Cancel</button><button className="admin-primary-button" type="submit">Create category <ArrowIcon /></button></div></form></div></div>}
