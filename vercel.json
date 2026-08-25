@@ -1,6 +1,13 @@
 {
   "rewrites": [
     { "source": "/admin", "destination": "/index.html" },
-    { "source": "/admin/(.*)", "destination": "/index.html" }
+    { "source": "/admin/(.*)", "destination": "/index.html" },
+    { "source": "/designs", "destination": "/index.html" },
+    { "source": "/designs/(.*)", "destination": "/index.html" },
+    { "source": "/bridal", "destination": "/index.html" },
+    { "source": "/bridal/(.*)", "destination": "/index.html" },
+    { "source": "/work", "destination": "/index.html" },
+    { "source": "/events", "destination": "/index.html" },
+    { "source": "/events/(.*)", "destination": "/index.html" }
   ]
 }
