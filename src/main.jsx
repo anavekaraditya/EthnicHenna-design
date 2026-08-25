@@ -8,7 +8,7 @@ const imageFiles = {
   25: ['IMG_0331.jpg', 'IMG_1001.jpg', 'IMG_1183.jpg', 'IMG_2267.jpg', 'IMG_2555.jpg', 'IMG_2640.jpg', 'IMG_3595.jpg', 'IMG_8102.jpg', 'IMG_9089.jpg', 'IMG_9819.jpg'],
 }
 
-const collections = Object.entries(imageFiles).map(([price, files]) => ({
+const initialCollections = Object.entries(imageFiles).map(([price, files]) => ({
   price: Number(price),
   label: `$${price}`,
   description: price === '15' ? 'Beautiful essentials for a first look.' : price === '20' ? 'A little more detail for your next celebration.' : 'Signature designs made to leave an impression.',
@@ -18,6 +18,23 @@ const collections = Object.entries(imageFiles).map(([price, files]) => ({
     alt: `Henna design ${price}-${String(index + 1).padStart(2, '0')} from the ${price} dollar collection`,
   })),
 }))
+
+const collectionsStorageKey = 'deepali-henna-collections-v1'
+const adminSessionKey = 'deepali-henna-admin-session'
+const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD || 'deepali1234'
+
+function loadCollections() {
+  try {
+    const saved = localStorage.getItem(collectionsStorageKey)
+    return saved ? JSON.parse(saved) : initialCollections
+  } catch {
+    return initialCollections
+  }
+}
+
+function saveCollections(nextCollections) {
+  localStorage.setItem(collectionsStorageKey, JSON.stringify(nextCollections))
+}
 
 const whatsappNumber = '15103408849'
 const venmoLink = 'https://venmo.com/code?user_id=2414993068785664394&created=1774645132.445458'
@@ -39,7 +56,7 @@ function WhatsAppIcon() {
 function CollectionCard({ collection, onSelect }) {
   return (
     <button className="collection-card" onClick={() => onSelect(collection.price)} aria-label={`View ${collection.label} collection`}>
-      <span className="collection-image-wrap"><img src={collection.designs[0].src} alt="" loading="lazy" /></span>
+      <span className="collection-image-wrap">{collection.designs[0] ? <img src={collection.designs[0].src} alt="" loading="lazy" /> : <span className="collection-image-empty">Add your first design</span>}</span>
       <span className="collection-card-body">
         <span className="collection-card-top"><span className="eyebrow">Collection</span><span className="collection-count">{collection.designs.length} designs</span></span>
         <span className="collection-price">{collection.label}</span>
@@ -90,7 +107,204 @@ function Lightbox({ selected, onClose, onPrevious, onNext }) {
   )
 }
 
+function AdminLogin({ onLogin }) {
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  const submit = (event) => {
+    event.preventDefault()
+    if (password === adminPassword) {
+      sessionStorage.setItem(adminSessionKey, 'active')
+      onLogin()
+    } else {
+      setError('That password does not match. Please try again.')
+    }
+  }
+
+  return (
+    <main className="admin-shell admin-login-shell">
+      <div className="admin-login-card">
+        <a className="admin-back-link" href="./">← Back to public menu</a>
+        <img className="admin-login-logo" src="./deepali-logo-mark.png" alt="" />
+        <p className="eyebrow">Artist access</p>
+        <h1>Welcome back,<br /><em>Deepali.</em></h1>
+        <p className="admin-intro">Sign in to update your collections and keep your design menu fresh.</p>
+        <form onSubmit={submit} className="admin-login-form">
+          <label htmlFor="admin-password">Password</label>
+          <input id="admin-password" type="password" value={password} onChange={(event) => { setPassword(event.target.value); setError('') }} autoComplete="current-password" autoFocus required />
+          {error && <p className="admin-error" role="alert">{error}</p>}
+          <button className="admin-primary-button" type="submit">Open artist dashboard <ArrowIcon /></button>
+        </form>
+        <p className="admin-security-note">This dashboard is for the artist only.</p>
+      </div>
+    </main>
+  )
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+function renumberDesigns(price, designs) {
+  return designs.map((design, index) => ({
+    ...design,
+    id: `${price}-${String(index + 1).padStart(2, '0')}`,
+    alt: `Henna design ${price}-${String(index + 1).padStart(2, '0')} from the ${price} dollar collection`,
+  }))
+}
+
+function AdminDashboard({ onLogout }) {
+  const [collections, setCollections] = useState(loadCollections)
+  const [selectedPrice, setSelectedPrice] = useState(loadCollections()[0]?.price)
+  const [categoryForm, setCategoryForm] = useState({ price: '', description: '' })
+  const [notice, setNotice] = useState('')
+  const [categoryToDelete, setCategoryToDelete] = useState(null)
+  const [showAddCategory, setShowAddCategory] = useState(false)
+  const [editingDesignIndex, setEditingDesignIndex] = useState(null)
+  const [draggedIndex, setDraggedIndex] = useState(null)
+  const importRef = useRef(null)
+  const activeCollection = collections.find((collection) => String(collection.price) === String(selectedPrice))
+  const editingDesign = activeCollection?.designs[editingDesignIndex]
+
+  const updateCollections = (nextCollections, message = 'Changes saved on this device.') => {
+    setCollections(nextCollections)
+    saveCollections(nextCollections)
+    setNotice(message)
+    window.setTimeout(() => setNotice(''), 2600)
+  }
+
+  const addCategory = (event) => {
+    event.preventDefault()
+    const price = Number(categoryForm.price)
+    if (!price || collections.some((collection) => collection.price === price)) return
+    const next = [...collections, { price, label: `$${price}`, description: categoryForm.description || 'A new collection by Deepali.', designs: [] }]
+      .sort((a, b) => a.price - b.price)
+    updateCollections(next, `$${price} collection created.`)
+    setSelectedPrice(price)
+    setCategoryForm({ price: '', description: '' })
+    setShowAddCategory(false)
+  }
+
+  const removeCategory = () => {
+    if (!categoryToDelete || collections.length === 1) return
+    const next = collections.filter((collection) => collection.price !== categoryToDelete.price)
+    updateCollections(next, `${categoryToDelete.label} collection removed.`)
+    setSelectedPrice(next[0]?.price)
+    setCategoryToDelete(null)
+  }
+
+  const addImages = async (event) => {
+    const files = [...event.target.files]
+    if (!files.length || !activeCollection) return
+    const newDesigns = await Promise.all(files.map(async (file, index) => {
+      const nextNumber = activeCollection.designs.length + index + 1
+      return { id: `${activeCollection.price}-${String(nextNumber).padStart(2, '0')}`, src: await fileToDataUrl(file), alt: `Henna design ${activeCollection.price}-${String(nextNumber).padStart(2, '0')} from the ${activeCollection.price} dollar collection` }
+    }))
+    updateCollections(collections.map((collection) => collection.price === activeCollection.price ? { ...collection, designs: [...collection.designs, ...newDesigns] } : collection), `${newDesigns.length} design${newDesigns.length === 1 ? '' : 's'} added.`)
+    event.target.value = ''
+  }
+
+  const moveDesign = (index, direction) => {
+    const nextDesigns = [...activeCollection.designs]
+    const target = index + direction
+    if (target < 0 || target >= nextDesigns.length) return
+    ;[nextDesigns[index], nextDesigns[target]] = [nextDesigns[target], nextDesigns[index]]
+    const renumbered = renumberDesigns(activeCollection.price, nextDesigns)
+    updateCollections(collections.map((collection) => collection.price === activeCollection.price ? { ...collection, designs: renumbered } : collection), 'Picture order updated.')
+  }
+
+  const removeDesign = (index) => {
+    const remaining = renumberDesigns(activeCollection.price, activeCollection.designs.filter((_, designIndex) => designIndex !== index))
+    updateCollections(collections.map((collection) => collection.price === activeCollection.price ? { ...collection, designs: remaining } : collection), 'Design removed.')
+  }
+
+  const reorderDesign = (fromIndex, toIndex) => {
+    if (fromIndex === null || fromIndex === toIndex || !activeCollection) return
+    const nextDesigns = [...activeCollection.designs]
+    const [movedDesign] = nextDesigns.splice(fromIndex, 1)
+    nextDesigns.splice(toIndex, 0, movedDesign)
+    const renumbered = renumberDesigns(activeCollection.price, nextDesigns)
+    updateCollections(collections.map((collection) => collection.price === activeCollection.price ? { ...collection, designs: renumbered } : collection), 'Picture order updated.')
+    setDraggedIndex(null)
+  }
+
+  const moveDesignToCategory = (targetPrice) => {
+    if (editingDesignIndex === null || !editingDesign || targetPrice === activeCollection.price) return
+    const targetCollection = collections.find((collection) => collection.price === targetPrice)
+    if (!targetCollection) return
+    const sourceDesigns = activeCollection.designs.filter((_, index) => index !== editingDesignIndex)
+    const nextCollections = collections.map((collection) => {
+      if (collection.price === activeCollection.price) return { ...collection, designs: renumberDesigns(collection.price, sourceDesigns) }
+      if (collection.price === targetCollection.price) return { ...collection, designs: renumberDesigns(collection.price, [...collection.designs, editingDesign]) }
+      return collection
+    })
+    updateCollections(nextCollections, `Design moved to ${targetCollection.label}.`)
+    setSelectedPrice(targetCollection.price)
+    setEditingDesignIndex(null)
+  }
+
+  const replaceDesign = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file || editingDesignIndex === null || !activeCollection) return
+    const nextSrc = await fileToDataUrl(file)
+    const nextDesigns = activeCollection.designs.map((design, index) => index === editingDesignIndex ? { ...design, src: nextSrc } : design)
+    updateCollections(collections.map((collection) => collection.price === activeCollection.price ? { ...collection, designs: nextDesigns } : collection), 'Image replaced.')
+    setEditingDesignIndex(null)
+    event.target.value = ''
+  }
+
+  const exportBackup = () => {
+    const blob = new Blob([JSON.stringify(collections, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'deepali-henna-menu-backup.json'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const importBackup = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try {
+      const imported = JSON.parse(await file.text())
+      if (!Array.isArray(imported) || imported.some((collection) => !collection.price || !Array.isArray(collection.designs))) throw new Error('Invalid backup')
+      updateCollections(imported, 'Backup restored.')
+      setSelectedPrice(imported[0]?.price)
+    } catch {
+      setNotice('That backup file could not be read.')
+    }
+    event.target.value = ''
+  }
+
+  return (
+    <main className="admin-shell">
+      <header className="admin-header">
+        <a className="wordmark" href="./"><img className="wordmark-logo" src="./deepali-logo-mark.png" alt="" /><span className="wordmark-label">Ethnic Henna by Deepali</span></a>
+        <button className="admin-logout" onClick={() => { sessionStorage.removeItem(adminSessionKey); onLogout() }}>Log out</button>
+      </header>
+      <section className="admin-content">
+        <div className="admin-title-row"><div><p className="eyebrow">Artist dashboard</p><h1>Make it yours,<br /><em>one design at a time.</em></h1></div><span className="admin-status">Saved privately</span></div>
+        <p className="admin-intro admin-wide-intro">Choose a collection to add pictures or change their order. Updates are saved on this device.</p>
+        {notice && <p className="admin-notice" role="status">{notice}</p>}
+        <div className="admin-toolbar"><div className="admin-category-tabs" role="tablist" aria-label="Collections">{collections.map((collection) => <button key={collection.price} className={collection.price === activeCollection?.price ? 'is-active' : ''} onClick={() => setSelectedPrice(collection.price)} role="tab" aria-selected={collection.price === activeCollection?.price}>{collection.label}<small>{collection.designs.length} designs</small></button>)}<button className="admin-new-category-tab" onClick={() => setShowAddCategory(true)} aria-label="Create a new category">＋<small>New category</small></button></div><div className="admin-toolbar-actions"><button className="admin-add-category-cta" onClick={() => setShowAddCategory(true)}>+ Add new category</button><label className="admin-upload-button">+ Add pictures<input type="file" accept="image/*" multiple onChange={addImages} disabled={!activeCollection} /></label></div></div>
+        {activeCollection && <section className="admin-collection-panel" aria-labelledby="admin-collection-title"><div className="admin-panel-heading"><div><p className="eyebrow">Editing collection</p><h2 id="admin-collection-title">{activeCollection.label}</h2></div><div className="admin-panel-meta"><span>{activeCollection.designs.length} designs</span><button className="admin-remove-category" onClick={() => setCategoryToDelete(activeCollection)} disabled={collections.length === 1}>Remove category</button></div></div>{activeCollection.designs.length ? <div className="admin-design-list" aria-label="Drag pictures to change their order">{activeCollection.designs.map((design, index) => <article className={`admin-design-row ${draggedIndex === index ? 'is-dragging' : ''}`} key={`${design.id}-${index}`} draggable onDragStart={() => setDraggedIndex(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => reorderDesign(draggedIndex, index)} onDragEnd={() => setDraggedIndex(null)}><button className="admin-design-thumb" onClick={() => setEditingDesignIndex(index)} aria-label={`Open options for ${design.id}`}><img src={design.src} alt="" /><span>Tap to edit</span></button><div className="admin-design-info"><strong>{design.id}</strong><span>Position {index + 1} · Drag to reorder</span></div><div className="admin-row-actions"><button onClick={() => moveDesign(index, -1)} disabled={index === 0} aria-label={`Move ${design.id} up`}>↑</button><button onClick={() => moveDesign(index, 1)} disabled={index === activeCollection.designs.length - 1} aria-label={`Move ${design.id} down`}>↓</button><button className="admin-remove" onClick={() => setEditingDesignIndex(index)} aria-label={`Open options for ${design.id}`}>×</button></div></article>)}</div> : <div className="admin-empty"><p>No designs here yet.</p><label className="admin-primary-button">Choose pictures<input type="file" accept="image/*" multiple onChange={addImages} /></label></div>}</section>}
+        <section className="admin-backups"><div><p className="eyebrow">Keep a copy</p><h2>Backup your menu</h2><p>Download your changes before switching devices.</p></div><div className="admin-backup-actions"><button className="admin-secondary-button" onClick={exportBackup}>Download backup</button><button className="admin-text-button" onClick={() => importRef.current?.click()}>Restore backup</button><input ref={importRef} type="file" accept="application/json" onChange={importBackup} /></div></section>
+      </section>
+      {showAddCategory && <div className="admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAddCategory(false) }}><div className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="add-category-title"><button className="admin-dialog-close" onClick={() => setShowAddCategory(false)} aria-label="Close new category form">×</button><p className="eyebrow">Grow your menu</p><h2 id="add-category-title">Create a new category</h2><form className="admin-category-dialog-form" onSubmit={addCategory}><label>Price<input type="number" min="1" step="1" placeholder="30" value={categoryForm.price} onChange={(event) => setCategoryForm({ ...categoryForm, price: event.target.value })} required /></label><label>Description <span>(optional)</span><input type="text" placeholder="Detailed designs for special occasions" value={categoryForm.description} onChange={(event) => setCategoryForm({ ...categoryForm, description: event.target.value })} /></label><div className="admin-dialog-actions"><button className="admin-secondary-button" type="button" onClick={() => setShowAddCategory(false)}>Cancel</button><button className="admin-primary-button" type="submit">Create category <ArrowIcon /></button></div></form></div></div>}
+      {categoryToDelete && <div className="admin-dialog-backdrop" role="presentation"><div className="admin-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-category-title" aria-describedby="delete-category-description"><p className="eyebrow">Please confirm</p><h2 id="delete-category-title">Remove {categoryToDelete.label}?</h2><p id="delete-category-description">This will remove the category and all {categoryToDelete.designs.length} design{categoryToDelete.designs.length === 1 ? '' : 's'} inside it. This action cannot be undone unless you restore a backup.</p><div className="admin-dialog-actions"><button className="admin-secondary-button" onClick={() => setCategoryToDelete(null)}>Keep category</button><button className="admin-danger-button" onClick={removeCategory}>Remove category</button></div></div></div>}
+      {editingDesign && <div className="admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingDesignIndex(null) }}><div className="admin-image-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-image-title"><button className="admin-dialog-close" onClick={() => setEditingDesignIndex(null)} aria-label="Close image options">×</button><img src={editingDesign.src} alt={editingDesign.alt} /><div className="admin-image-dialog-body"><p className="eyebrow">Design {editingDesign.id}</p><h2 id="edit-image-title">Picture options</h2><label className="admin-option-row"><span>Move to another category</span><select value={activeCollection.price} onChange={(event) => moveDesignToCategory(Number(event.target.value))}>{collections.map((collection) => <option key={collection.price} value={collection.price}>{collection.label}</option>)}</select></label><label className="admin-option-button">Replace image<input type="file" accept="image/*" onChange={replaceDesign} /></label><button className="admin-danger-button admin-full-button" onClick={() => { removeDesign(editingDesignIndex); setEditingDesignIndex(null) }}>Remove image</button></div></div></div>}
+    </main>
+  )
+}
+
 function App() {
+  const [collections, setCollections] = useState(loadCollections)
   const [activePrice, setActivePrice] = useState(null)
   const [selected, setSelected] = useState(null)
   const galleryRef = useRef(null)
@@ -115,4 +329,10 @@ function App() {
   )
 }
 
-createRoot(document.getElementById('root')).render(<StrictMode><App /></StrictMode>)
+const isAdminRoute = window.location.pathname.replace(/\/$/, '') === '/admin' || window.location.hash === '#admin'
+createRoot(document.getElementById('root')).render(<StrictMode>{isAdminRoute ? <AdminRoute /> : <App />}</StrictMode>)
+
+function AdminRoute() {
+  const [authenticated, setAuthenticated] = useState(() => sessionStorage.getItem(adminSessionKey) === 'active')
+  return authenticated ? <AdminDashboard onLogout={() => setAuthenticated(false)} /> : <AdminLogin onLogin={() => setAuthenticated(true)} />
+}
