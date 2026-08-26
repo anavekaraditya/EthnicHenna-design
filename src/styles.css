@@ -290,3 +290,16 @@ a { color: inherit; text-decoration: none; }
   .bridal-page > .landing-header .landing-nav a,
   .events-page > .landing-header .landing-nav a { font-size: 9px; }
 }
+
+@media (min-width: 721px) {
+  .landing-page > .landing-header { margin: 0; max-width: none; width: 100%; }
+  .public-hero-background { object-fit: contain; object-position: right center; }
+  .designs-hero, .work-detail-hero { background: var(--paper); }
+  .bridal-hero { background: #28070b; }
+  .events-hero { background: #3b210b; }
+  .designs-hero::after, .work-detail-hero::after { background: linear-gradient(90deg, var(--paper) 0%, var(--paper) 38%, oklch(94.5% .028 45 / .96) 53%, oklch(94.5% .028 45 / .55) 69%, transparent 88%); }
+  .bridal-hero::after { background: linear-gradient(90deg, #28070b 0%, #28070b 38%, oklch(18% .05 22 / .96) 53%, oklch(18% .05 22 / .55) 69%, transparent 88%); }
+  .events-hero::after { background: linear-gradient(90deg, #3b210b 0%, #3b210b 38%, oklch(25% .06 45 / .96) 53%, oklch(25% .06 45 / .55) 69%, transparent 88%); }
+  .home-page .landing-hero-background { object-fit: contain; object-position: right center; }
+  .home-page .landing-hero::before { background: linear-gradient(90deg, var(--paper) 0%, var(--paper) 38%, oklch(94.5% .028 45 / .96) 53%, oklch(94.5% .028 45 / .55) 69%, transparent 88%); }
+}
