@@ -1,5 +1,6 @@
 import React, { StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 import './styles.css'
 
 const imageFiles = {
@@ -96,6 +97,7 @@ function Lightbox({ selected, onClose, onPrevious, onNext }) {
   const dialogRef = useRef(null)
   const closeRef = useRef(null)
   const touchStart = useRef(null)
+  const [showAr, setShowAr] = useState(false)
   const imageUrl = new URL(selected.design.src, window.location.href).href
   const whatsappHref = `https://wa.me/${whatsappNumber}?text=${whatsappMessage({ ...selected.design, price: selected.collection.price }, imageUrl)}`
 
@@ -125,8 +127,189 @@ function Lightbox({ selected, onClose, onPrevious, onNext }) {
       <div className="lightbox" role="dialog" aria-modal="true" aria-label={`Design ${selected.design.id}`} ref={dialogRef} onTouchStart={(event) => { touchStart.current = event.changedTouches[0].clientX }} onTouchEnd={(event) => { const start = touchStart.current; const end = event.changedTouches[0].clientX; if (start && Math.abs(start - end) > 45) start > end ? onNext() : onPrevious(); touchStart.current = null }}>
         <div className="lightbox-toolbar"><span className="lightbox-position">{selected.index + 1} / {selected.collection.designs.length}</span><button className="icon-button" onClick={onClose} ref={closeRef} aria-label="Close design preview"><CloseIcon /></button></div>
         <div className="lightbox-image-frame"><img src={selected.design.src} alt={selected.design.alt} /></div>
-        <div className="lightbox-details"><div><span className="eyebrow">Design {selected.design.id}</span><h2>{selected.collection.label} collection</h2></div><a className="whatsapp-button" href={whatsappHref} target="_blank" rel="noreferrer"><WhatsAppIcon /> Send it to artist</a></div>
+        <div className="lightbox-details"><div><span className="eyebrow">Design {selected.design.id}</span><h2>{selected.collection.label} collection</h2></div><div className="lightbox-actions">{selected.collection.price === 15 && selected.index === 0 && <button className="whatsapp-button lightbox-ar-button" type="button" onClick={() => setShowAr(true)}>Try on your hand</button>}<a className="whatsapp-button" href={whatsappHref} target="_blank" rel="noreferrer"><WhatsAppIcon /> Send it to artist</a></div></div>
         <div className="lightbox-nav"><button className="nav-button" onClick={onPrevious} aria-label="Previous design"><ArrowIcon direction="left" /> Previous</button><button className="nav-button" onClick={onNext} aria-label="Next design">Next <ArrowIcon /></button></div>
+      </div>
+      {showAr && <ArPreview design={selected.design} onClose={() => setShowAr(false)} />}
+    </div>
+  )
+}
+
+function drawImageRegionToQuad(context, image, sourceRect, [topLeft, topRight, bottomRight, bottomLeft]) {
+  const { x, y, width, height } = sourceRect
+  if (!image.naturalWidth || !image.naturalHeight || !width || !height) return
+  const drawTriangle = (source, target) => {
+    const [sourceA, sourceB, sourceC] = source
+    const [targetA, targetB, targetC] = target
+    const a = (targetB.x - targetA.x) / (sourceB.x - sourceA.x || 1)
+    const b = (targetB.y - targetA.y) / (sourceB.x - sourceA.x || 1)
+    const c = (targetC.x - targetA.x - a * (sourceC.x - sourceA.x)) / (sourceC.y - sourceA.y || 1)
+    const d = (targetC.y - targetA.y - b * (sourceC.x - sourceA.x)) / (sourceC.y - sourceA.y || 1)
+    const e = targetA.x - a * sourceA.x - c * sourceA.y
+    const f = targetA.y - b * sourceA.x - d * sourceA.y
+    context.save()
+    context.beginPath()
+    context.moveTo(targetA.x, targetA.y)
+    context.lineTo(targetB.x, targetB.y)
+    context.lineTo(targetC.x, targetC.y)
+    context.closePath()
+    context.clip()
+    context.transform(a, b, c, d, e, f)
+      context.drawImage(image, x, y, width, height, x, y, width, height)
+      context.restore()
+    }
+  drawTriangle([{ x, y }, { x: x + width, y }, { x: x + width, y: y + height }], [topLeft, topRight, bottomRight])
+  drawTriangle([{ x, y }, { x: x + width, y: y + height }, { x, y: y + height }], [topLeft, bottomRight, bottomLeft])
+}
+
+function fingerQuad(landmarks, indices, width) {
+  const base = landmarks[indices[0]]
+  const tip = landmarks[indices[indices.length - 1]]
+  const axisX = tip.x - base.x
+  const axisY = tip.y - base.y
+  const length = Math.hypot(axisX, axisY) || 1
+  const across = { x: -axisY / length, y: axisX / length }
+  const baseHalfWidth = width * .56
+  const tipHalfWidth = width * .34
+  return [
+    { x: tip.x - across.x * tipHalfWidth, y: tip.y - across.y * tipHalfWidth },
+    { x: tip.x + across.x * tipHalfWidth, y: tip.y + across.y * tipHalfWidth },
+    { x: base.x + across.x * baseHalfWidth, y: base.y + across.y * baseHalfWidth },
+    { x: base.x - across.x * baseHalfWidth, y: base.y - across.y * baseHalfWidth },
+  ]
+}
+
+const AR_ART_REGIONS = {
+  palm: { x: 260, y: 640, width: 455, height: 896 },
+  thumb: { x: 700, y: 585, width: 225, height: 360 },
+  index: { x: 215, y: 120, width: 205, height: 465 },
+  middle: { x: 410, y: 0, width: 205, height: 665 },
+  ring: { x: 590, y: 105, width: 210, height: 590 },
+  pinky: { x: 125, y: 285, width: 195, height: 490 },
+}
+
+function ArPreview({ design, onClose }) {
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const artImageRef = useRef(null)
+  const streamRef = useRef(null)
+  const landmarkerRef = useRef(null)
+  const frameRef = useRef(null)
+  const lastVideoTimeRef = useRef(-1)
+  const [cameraError, setCameraError] = useState('')
+  const [cameraReady, setCameraReady] = useState(false)
+  const [tracking, setTracking] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    const artImage = new Image()
+    artImage.src = '/ar/design-15-01-left.png'
+    artImageRef.current = artImage
+    const startCamera = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError('Camera preview is not supported in this browser.')
+        return
+      }
+      let stream
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+      } catch {
+        setCameraError('Camera access was blocked. Allow camera access for this site, then reopen the preview.')
+        return
+      }
+      if (cancelled) { stream.getTracks().forEach((track) => track.stop()); return }
+      streamRef.current = stream
+      if (videoRef.current) videoRef.current.srcObject = stream
+      setCameraReady(true)
+
+      try {
+        const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm')
+        const options = {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+          },
+          numHands: 1,
+          runningMode: 'VIDEO',
+        }
+        try {
+          landmarkerRef.current = await HandLandmarker.createFromOptions(vision, { ...options, baseOptions: { ...options.baseOptions, delegate: 'GPU' } })
+        } catch {
+          landmarkerRef.current = await HandLandmarker.createFromOptions(vision, { ...options, baseOptions: { ...options.baseOptions, delegate: 'CPU' } })
+        }
+
+        const trackHand = () => {
+          if (cancelled) return
+          const video = videoRef.current
+          const landmarker = landmarkerRef.current
+          if (video && landmarker && video.readyState >= 2 && video.currentTime !== lastVideoTimeRef.current) {
+            lastVideoTimeRef.current = video.currentTime
+            const result = landmarker.detectForVideo(video, performance.now())
+            const landmarks = result.landmarks?.[0]
+            if (landmarks && canvasRef.current && artImageRef.current?.complete) {
+              const mirror = (point) => ({ x: (1 - point.x) * video.clientWidth, y: point.y * video.clientHeight })
+              const points = landmarks.map(mirror)
+              const wrist = points[0]
+              const indexMcp = points[5]
+              const pinkyMcp = points[17]
+              const palmWidth = Math.hypot(indexMcp.x - pinkyMcp.x, indexMcp.y - pinkyMcp.y)
+              const across = { x: (pinkyMcp.x - indexMcp.x) / (palmWidth || 1), y: (pinkyMcp.y - indexMcp.y) / (palmWidth || 1) }
+              const bottomLeft = { x: wrist.x - across.x * palmWidth * .54, y: wrist.y - across.y * palmWidth * .54 }
+              const bottomRight = { x: wrist.x + across.x * palmWidth * .54, y: wrist.y + across.y * palmWidth * .54 }
+              const topLeft = { x: indexMcp.x - across.x * palmWidth * .1, y: indexMcp.y - across.y * palmWidth * .1 }
+              const topRight = { x: pinkyMcp.x + across.x * palmWidth * .1, y: pinkyMcp.y + across.y * palmWidth * .1 }
+              const canvas = canvasRef.current
+              const dpr = window.devicePixelRatio || 1
+              const width = video.clientWidth
+              const height = video.clientHeight
+              if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+                canvas.width = Math.round(width * dpr)
+                canvas.height = Math.round(height * dpr)
+                canvas.style.width = `${width}px`
+                canvas.style.height = `${height}px`
+              }
+              const context = canvas.getContext('2d')
+              context.setTransform(dpr, 0, 0, dpr, 0, 0)
+              context.clearRect(0, 0, width, height)
+              const fingerWidth = palmWidth * .22
+              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.palm, [topLeft, topRight, bottomRight, bottomLeft])
+              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.thumb, fingerQuad(points, [1, 2, 3, 4], fingerWidth * 1.1))
+              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.index, fingerQuad(points, [5, 6, 7, 8], fingerWidth))
+              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.middle, fingerQuad(points, [9, 10, 11, 12], fingerWidth))
+              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.ring, fingerQuad(points, [13, 14, 15, 16], fingerWidth))
+              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.pinky, fingerQuad(points, [17, 18, 19, 20], fingerWidth * .9))
+              setTracking(true)
+            } else {
+              if (canvasRef.current) canvasRef.current.getContext('2d')?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+              setTracking(false)
+            }
+          }
+          frameRef.current = requestAnimationFrame(trackHand)
+        }
+        frameRef.current = requestAnimationFrame(trackHand)
+      } catch {
+        setCameraError('Camera is working, but the hand-tracking model could not load. Check your connection and try again.')
+      }
+    }
+    startCamera()
+    return () => {
+      cancelled = true
+      if (frameRef.current) cancelAnimationFrame(frameRef.current)
+      landmarkerRef.current?.close()
+      streamRef.current?.getTracks().forEach((track) => track.stop())
+    }
+  }, [])
+
+  return (
+    <div className="ar-preview-backdrop" role="presentation">
+      <div className="ar-preview" role="dialog" aria-modal="true" aria-label={`Try design ${design.id} on your hand`}>
+        <div className="ar-preview-header"><div><p className="eyebrow">Live hand preview</p><h2>Try design {design.id}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close hand preview"><CloseIcon /></button></div>
+        <div className="ar-camera-stage">
+          <video ref={videoRef} autoPlay muted playsInline aria-label="Live camera preview" />
+          <div className={`ar-camera-placeholder${cameraReady ? ' is-ready' : ''}`} aria-hidden="true">{cameraError ? 'Camera unavailable' : 'Starting camera…'}</div>
+          <canvas ref={canvasRef} className="ar-art-canvas" aria-hidden="true" />
+          {!cameraError && <p className="ar-tracking-status" role="status">{tracking ? 'Hand detected' : 'Show one hand to the camera'}</p>}
+        </div>
+        <div className="ar-preview-controls"><p>The camera tracks your hand and follows its movement, size, and rotation in real time.</p>{cameraError && <p className="ar-preview-error" role="status">{cameraError}</p>}<p className="ar-preview-note">Prototype note: this uses reconstructed transparent henna artwork. More designs can use the same landmark-based system once their assets are prepared.</p></div>
       </div>
     </div>
   )
