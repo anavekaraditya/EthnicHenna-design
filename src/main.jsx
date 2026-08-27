@@ -1,6 +1,7 @@
 import React, { StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
+import { createPalmMesh, drawAnchoredAsset, drawFullHandMesh, drawGloveTemplate, drawPalmMesh, drawPreparedHand, drawRigidHandArt, hasTrackablePalm, projectLandmarksToDisplay, smoothPoints } from './ar/palmMesh.js'
 import './styles.css'
 
 const imageFiles = {
@@ -28,6 +29,44 @@ const curatedPortfolioFiles = [
   '/portfolio/ethnic-henna-10.jpg',
   '/portfolio/ethnic-henna-01.jpg',
 ]
+
+// Each AR asset is authored for a known body surface. Add future designs here
+// with their transparent asset, orientation, opacity, and landmark contract.
+const arDesignAssets = {
+  '15-01': {
+    surface: 'prepared-hand',
+    orientation: 'left-dorsal',
+    handSide: 'back-of-hand',
+    mirrorForOppositeHand: true,
+    opacity: .88,
+    parts: {
+      palm: {
+        wrist: [125, 950],
+        middle_mcp: [325, 110],
+      },
+      thumb: {
+        mcp: [80, 320],
+        tip: [175, 35],
+      },
+      index: {
+        mcp: [85, 465],
+        tip: [82, 8],
+      },
+      middle: {
+        mcp: [57, 425],
+        tip: [57, 8],
+      },
+      ring: {
+        mcp: [95, 740],
+        tip: [87, 8],
+      },
+      pinky: {
+        mcp: [125, 545],
+        tip: [125, 8],
+      },
+    },
+  },
+}
 
 const initialCollections = Object.entries(imageFiles).map(([price, files]) => ({
   price: Number(price),
@@ -135,92 +174,58 @@ function Lightbox({ selected, onClose, onPrevious, onNext }) {
   )
 }
 
-function drawImageRegionToQuad(context, image, sourceRect, [topLeft, topRight, bottomRight, bottomLeft]) {
-  const { x, y, width, height } = sourceRect
-  if (!image.naturalWidth || !image.naturalHeight || !width || !height) return
-  const drawTriangle = (source, target) => {
-    const [sourceA, sourceB, sourceC] = source
-    const [targetA, targetB, targetC] = target
-    const a = (targetB.x - targetA.x) / (sourceB.x - sourceA.x || 1)
-    const b = (targetB.y - targetA.y) / (sourceB.x - sourceA.x || 1)
-    const c = (targetC.x - targetA.x - a * (sourceC.x - sourceA.x)) / (sourceC.y - sourceA.y || 1)
-    const d = (targetC.y - targetA.y - b * (sourceC.x - sourceA.x)) / (sourceC.y - sourceA.y || 1)
-    const e = targetA.x - a * sourceA.x - c * sourceA.y
-    const f = targetA.y - b * sourceA.x - d * sourceA.y
-    context.save()
-    context.beginPath()
-    context.moveTo(targetA.x, targetA.y)
-    context.lineTo(targetB.x, targetB.y)
-    context.lineTo(targetC.x, targetC.y)
-    context.closePath()
-    context.clip()
-    context.transform(a, b, c, d, e, f)
-      context.drawImage(image, x, y, width, height, x, y, width, height)
-      context.restore()
-    }
-  drawTriangle([{ x, y }, { x: x + width, y }, { x: x + width, y: y + height }], [topLeft, topRight, bottomRight])
-  drawTriangle([{ x, y }, { x: x + width, y: y + height }, { x, y: y + height }], [topLeft, bottomRight, bottomLeft])
-}
-
-function fingerQuad(landmarks, indices, width) {
-  const base = landmarks[indices[0]]
-  const tip = landmarks[indices[indices.length - 1]]
-  const axisX = tip.x - base.x
-  const axisY = tip.y - base.y
-  const length = Math.hypot(axisX, axisY) || 1
-  const across = { x: -axisY / length, y: axisX / length }
-  const baseHalfWidth = width * .56
-  const tipHalfWidth = width * .34
-  return [
-    { x: tip.x - across.x * tipHalfWidth, y: tip.y - across.y * tipHalfWidth },
-    { x: tip.x + across.x * tipHalfWidth, y: tip.y + across.y * tipHalfWidth },
-    { x: base.x + across.x * baseHalfWidth, y: base.y + across.y * baseHalfWidth },
-    { x: base.x - across.x * baseHalfWidth, y: base.y - across.y * baseHalfWidth },
-  ]
-}
-
-const AR_ART_REGIONS = {
-  palm: { x: 260, y: 640, width: 455, height: 896 },
-  thumb: { x: 700, y: 585, width: 225, height: 360 },
-  index: { x: 215, y: 120, width: 205, height: 465 },
-  middle: { x: 410, y: 0, width: 205, height: 665 },
-  ring: { x: 590, y: 105, width: 210, height: 590 },
-  pinky: { x: 125, y: 285, width: 195, height: 490 },
-}
-
 function ArPreview({ design, onClose }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
-  const artImageRef = useRef(null)
+  const artImagesRef = useRef({})
+  const artAssetRef = useRef(arDesignAssets[design.id] || arDesignAssets['15-01'])
   const streamRef = useRef(null)
   const landmarkerRef = useRef(null)
   const frameRef = useRef(null)
   const lastVideoTimeRef = useRef(-1)
+  const meshRef = useRef(null)
+  const landmarksRef = useRef(null)
   const [cameraError, setCameraError] = useState('')
+  const [cameraActive, setCameraActive] = useState(false)
+  const [cameraState, setCameraState] = useState('idle')
   const [cameraReady, setCameraReady] = useState(false)
   const [tracking, setTracking] = useState(false)
 
   useEffect(() => {
+    const asset = artAssetRef.current
+    if (asset.surface === 'prepared-hand') {
+      const names = ['palm', 'thumb', 'index', 'middle', 'ring', 'pinky']
+      names.forEach((name) => { const image = new Image(); image.src = `/ar/isolated-15-01/henna_${name}.png`; artImagesRef.current[name] = image })
+    } else if (asset.assetPath) {
+      const artImage = new Image()
+      artImage.src = asset.assetPath
+      artImagesRef.current.single = artImage
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!cameraActive) return undefined
     let cancelled = false
-    const artImage = new Image()
-    artImage.src = '/ar/design-15-01-left.png'
-    artImageRef.current = artImage
     const startCamera = async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
         setCameraError('Camera preview is not supported in this browser.')
+        setCameraState('error')
         return
       }
+      setCameraState('loading')
       let stream
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
       } catch {
         setCameraError('Camera access was blocked. Allow camera access for this site, then reopen the preview.')
+        setCameraState('error')
         return
       }
       if (cancelled) { stream.getTracks().forEach((track) => track.stop()); return }
       streamRef.current = stream
       if (videoRef.current) videoRef.current.srcObject = stream
       setCameraReady(true)
+      setCameraError('')
 
       try {
         const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm')
@@ -236,6 +241,7 @@ function ArPreview({ design, onClose }) {
         } catch {
           landmarkerRef.current = await HandLandmarker.createFromOptions(vision, { ...options, baseOptions: { ...options.baseOptions, delegate: 'CPU' } })
         }
+        setCameraState('ready')
 
         const trackHand = () => {
           if (cancelled) return
@@ -245,18 +251,13 @@ function ArPreview({ design, onClose }) {
             lastVideoTimeRef.current = video.currentTime
             const result = landmarker.detectForVideo(video, performance.now())
             const landmarks = result.landmarks?.[0]
-            if (landmarks && canvasRef.current && artImageRef.current?.complete) {
-              const mirror = (point) => ({ x: (1 - point.x) * video.clientWidth, y: point.y * video.clientHeight })
-              const points = landmarks.map(mirror)
-              const wrist = points[0]
-              const indexMcp = points[5]
-              const pinkyMcp = points[17]
-              const palmWidth = Math.hypot(indexMcp.x - pinkyMcp.x, indexMcp.y - pinkyMcp.y)
-              const across = { x: (pinkyMcp.x - indexMcp.x) / (palmWidth || 1), y: (pinkyMcp.y - indexMcp.y) / (palmWidth || 1) }
-              const bottomLeft = { x: wrist.x - across.x * palmWidth * .54, y: wrist.y - across.y * palmWidth * .54 }
-              const bottomRight = { x: wrist.x + across.x * palmWidth * .54, y: wrist.y + across.y * palmWidth * .54 }
-              const topLeft = { x: indexMcp.x - across.x * palmWidth * .1, y: indexMcp.y - across.y * palmWidth * .1 }
-              const topRight = { x: pinkyMcp.x + across.x * palmWidth * .1, y: pinkyMcp.y + across.y * palmWidth * .1 }
+            const preparedImagesReady = Object.values(artImagesRef.current).every((image) => image.complete && image.naturalWidth)
+            if (hasTrackablePalm(landmarks) && canvasRef.current && preparedImagesReady) {
+              const points = projectLandmarksToDisplay(landmarks, video.videoWidth, video.videoHeight, video.clientWidth, video.clientHeight)
+              const stablePoints = smoothPoints(landmarksRef.current, points, .32)
+              landmarksRef.current = stablePoints
+              const mesh = createPalmMesh(stablePoints)
+              meshRef.current = mesh
               const canvas = canvasRef.current
               const dpr = window.devicePixelRatio || 1
               const width = video.clientWidth
@@ -270,16 +271,16 @@ function ArPreview({ design, onClose }) {
               const context = canvas.getContext('2d')
               context.setTransform(dpr, 0, 0, dpr, 0, 0)
               context.clearRect(0, 0, width, height)
-              const fingerWidth = palmWidth * .22
-              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.palm, [topLeft, topRight, bottomRight, bottomLeft])
-              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.thumb, fingerQuad(points, [1, 2, 3, 4], fingerWidth * 1.1))
-              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.index, fingerQuad(points, [5, 6, 7, 8], fingerWidth))
-              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.middle, fingerQuad(points, [9, 10, 11, 12], fingerWidth))
-              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.ring, fingerQuad(points, [13, 14, 15, 16], fingerWidth))
-              drawImageRegionToQuad(context, artImageRef.current, AR_ART_REGIONS.pinky, fingerQuad(points, [17, 18, 19, 20], fingerWidth * .9))
+              if (artAssetRef.current.surface === 'glove-template') drawGloveTemplate(context, stablePoints, { opacity: .95 })
+              else if (artAssetRef.current.surface === 'prepared-hand') drawPreparedHand(context, artImagesRef.current, stablePoints, artAssetRef.current.parts, artAssetRef.current.opacity)
+              else if (artAssetRef.current.surface === 'rigid-hand') drawRigidHandArt(context, artImagesRef.current.single, stablePoints, artAssetRef.current.opacity)
+              else if (artAssetRef.current.surface === 'full-hand') drawFullHandMesh(context, artImagesRef.current.single, stablePoints, artAssetRef.current.opacity, artAssetRef.current.palmAnchors)
+              else drawPalmMesh(context, artImagesRef.current.single, mesh, artAssetRef.current.opacity)
               setTracking(true)
             } else {
               if (canvasRef.current) canvasRef.current.getContext('2d')?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+              meshRef.current = null
+              landmarksRef.current = null
               setTracking(false)
             }
           }
@@ -288,6 +289,7 @@ function ArPreview({ design, onClose }) {
         frameRef.current = requestAnimationFrame(trackHand)
       } catch {
         setCameraError('Camera is working, but the hand-tracking model could not load. Check your connection and try again.')
+        setCameraState('error')
       }
     }
     startCamera()
@@ -295,9 +297,48 @@ function ArPreview({ design, onClose }) {
       cancelled = true
       if (frameRef.current) cancelAnimationFrame(frameRef.current)
       landmarkerRef.current?.close()
+      landmarkerRef.current = null
       streamRef.current?.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+      if (videoRef.current) videoRef.current.srcObject = null
     }
-  }, [])
+  }, [cameraActive])
+
+  const resetPreview = () => {
+    meshRef.current = null
+    landmarksRef.current = null
+    lastVideoTimeRef.current = -1
+    setTracking(false)
+    const canvas = canvasRef.current
+    if (canvas) canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
+  }
+
+  const stopCamera = () => {
+    setCameraActive(false)
+    setCameraReady(false)
+    setCameraState('idle')
+    resetPreview()
+  }
+
+  const capturePreview = () => {
+    const video = videoRef.current
+    const overlay = canvasRef.current
+    if (!video?.videoWidth || !video?.videoHeight || !overlay) return
+    const captureCanvas = document.createElement('canvas')
+    captureCanvas.width = video.videoWidth
+    captureCanvas.height = video.videoHeight
+    const context = captureCanvas.getContext('2d')
+    if (!context) return
+    context.translate(captureCanvas.width, 0)
+    context.scale(-1, 1)
+    context.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height)
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    context.drawImage(overlay, 0, 0, overlay.width, overlay.height, 0, 0, captureCanvas.width, captureCanvas.height)
+    const link = document.createElement('a')
+    link.download = `deepali-henna-${design.id}.png`
+    link.href = captureCanvas.toDataURL('image/png')
+    link.click()
+  }
 
   return (
     <div className="ar-preview-backdrop" role="presentation">
@@ -305,11 +346,11 @@ function ArPreview({ design, onClose }) {
         <div className="ar-preview-header"><div><p className="eyebrow">Live hand preview</p><h2>Try design {design.id}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close hand preview"><CloseIcon /></button></div>
         <div className="ar-camera-stage">
           <video ref={videoRef} autoPlay muted playsInline aria-label="Live camera preview" />
-          <div className={`ar-camera-placeholder${cameraReady ? ' is-ready' : ''}`} aria-hidden="true">{cameraError ? 'Camera unavailable' : 'Starting camera…'}</div>
+          <div className={`ar-camera-placeholder${cameraReady ? ' is-ready' : ''}`} aria-hidden="true">{cameraError ? 'Camera unavailable' : cameraState === 'idle' ? 'Start the camera to try this design' : 'Starting camera…'}</div>
           <canvas ref={canvasRef} className="ar-art-canvas" aria-hidden="true" />
-          {!cameraError && <p className="ar-tracking-status" role="status">{tracking ? 'Hand detected' : 'Show one hand to the camera'}</p>}
+          {!cameraError && cameraActive && <p className="ar-tracking-status" role="status">{tracking ? 'Hand detected' : 'Show one hand to the camera'}</p>}
         </div>
-        <div className="ar-preview-controls"><p>The camera tracks your hand and follows its movement, size, and rotation in real time.</p>{cameraError && <p className="ar-preview-error" role="status">{cameraError}</p>}<p className="ar-preview-note">Prototype note: this uses reconstructed transparent henna artwork. More designs can use the same landmark-based system once their assets are prepared.</p></div>
+        <div className="ar-preview-controls"><p>The camera tracks your hand and follows its movement, size, and rotation in real time.</p>{cameraError && <p className="ar-preview-error" role="status">{cameraError}</p>}<div className="ar-preview-actions">{!cameraActive ? <button className="whatsapp-button lightbox-ar-button" type="button" onClick={() => { setCameraError(''); setCameraActive(true) }}>Start camera</button> : <button className="nav-button" type="button" onClick={stopCamera}>Stop camera</button>}<button className="nav-button" type="button" onClick={resetPreview}>Reset</button><button className="nav-button" type="button" onClick={capturePreview} disabled={!cameraReady || !tracking}>Save preview</button></div><p className="ar-preview-note">This design uses a palm asset and separate finger assets, each calibrated to hand landmarks. Camera frames stay in this browser.</p></div>
       </div>
     </div>
   )

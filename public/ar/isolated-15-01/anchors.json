@@ -1,0 +1,134 @@
+{
+  "source": "4ee82e8a-d46d-42f0-8cc5-2b8d12d661d9.png",
+  "orientation": "already_upright_wrist_bottom",
+  "extraction": "source_alpha_preserved; black_background_removed",
+  "assets": {
+    "henna_full_hand.png": {
+      "landmarks": {
+        "wrist": 0,
+        "index_mcp": 5,
+        "middle_mcp": 9,
+        "pinky_mcp": 17
+      },
+      "anchors_px": {
+        "wrist": [
+          507,
+          1502
+        ],
+        "index_mcp": [
+          257,
+          662
+        ],
+        "middle_mcp": [
+          507,
+          662
+        ],
+        "pinky_mcp": [
+          752,
+          642
+        ]
+      }
+    },
+    "henna_palm.png": {
+      "landmarks": {
+        "wrist": 0,
+        "index_mcp": 5,
+        "middle_mcp": 9
+      },
+      "anchors_px": {
+        "wrist": [
+          125,
+          950
+        ],
+        "index_mcp": [
+          75,
+          110
+        ],
+        "middle_mcp": [
+          325,
+          110
+        ]
+      }
+    },
+    "henna_thumb.png": {
+      "landmarks": {
+        "mcp": 2,
+        "tip": 4
+      },
+      "anchors_px": {
+        "mcp": [
+          80,
+          320
+        ],
+        "tip": [
+          175,
+          35
+        ]
+      }
+    },
+    "henna_index.png": {
+      "landmarks": {
+        "mcp": 5,
+        "tip": 8
+      },
+      "anchors_px": {
+        "mcp": [
+          85,
+          465
+        ],
+        "tip": [
+          82,
+          8
+        ]
+      }
+    },
+    "henna_middle.png": {
+      "landmarks": {
+        "mcp": 9,
+        "tip": 12
+      },
+      "anchors_px": {
+        "mcp": [
+          57,
+          425
+        ],
+        "tip": [
+          57,
+          8
+        ]
+      }
+    },
+    "henna_ring.png": {
+      "landmarks": {
+        "mcp": 13,
+        "tip": 16
+      },
+      "anchors_px": {
+        "mcp": [
+          95,
+          740
+        ],
+        "tip": [
+          87,
+          8
+        ]
+      }
+    },
+    "henna_pinky.png": {
+      "landmarks": {
+        "mcp": 17,
+        "tip": 20
+      },
+      "anchors_px": {
+        "mcp": [
+          125,
+          545
+        ],
+        "tip": [
+          125,
+          8
+        ]
+      }
+    }
+  }
+}
