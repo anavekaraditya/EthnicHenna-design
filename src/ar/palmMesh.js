@@ -49,7 +49,7 @@ export function mirrorLandmarks(landmarks, width) {
   return landmarks.map((point) => ({ x: (1 - point.x) * width, y: point.y }))
 }
 
-export function projectLandmarksToDisplay(landmarks, sourceWidth, sourceHeight, displayWidth, displayHeight) {
+export function projectLandmarksToDisplay(landmarks, sourceWidth, sourceHeight, displayWidth, displayHeight, mirror = true) {
   if (!sourceWidth || !sourceHeight || !displayWidth || !displayHeight) return []
   const scale = Math.max(displayWidth / sourceWidth, displayHeight / sourceHeight)
   const renderedWidth = sourceWidth * scale
@@ -57,7 +57,7 @@ export function projectLandmarksToDisplay(landmarks, sourceWidth, sourceHeight, 
   const offsetX = (displayWidth - renderedWidth) / 2
   const offsetY = (displayHeight - renderedHeight) / 2
   return landmarks.map((point) => ({
-    x: (1 - point.x) * renderedWidth + offsetX,
+    x: (mirror ? (1 - point.x) : point.x) * renderedWidth + offsetX,
     y: point.y * renderedHeight + offsetY,
   }))
 }
@@ -160,7 +160,7 @@ export function drawPalmMesh(context, image, targetPoints, opacity = .92) {
   })
 }
 
-export function drawFullHandMesh(context, image, points, opacity = .92, palmAnchors) {
+export function drawFullHandMesh(context, image, points, opacity = .92, palmAnchors, sourceLayout) {
   if (!image?.naturalWidth || !image?.naturalHeight || !hasTrackablePalm(points)) return
   const palm = createPalmMesh(points)
   const palmClip = [palm[0], palm[1], points[17], points[13], points[9], points[5], points[2]]
@@ -187,7 +187,10 @@ export function drawFullHandMesh(context, image, points, opacity = .92, palmAnch
     ['pinky', [17, 18, 19, 20], .9],
   ]
   fingerRegions.forEach(([name, indices, widthScale]) => {
-    const sourceQuad = FULL_HAND_FINGER_SOURCE[name]
+    const customFinger = sourceLayout?.fingers?.[name]
+    const sourceQuad = customFinger
+      ? makeSourceQuad(customFinger.base, customFinger.tip, customFinger.baseWidth, customFinger.tipWidth)
+      : FULL_HAND_FINGER_SOURCE[name]
     const targetQuad = makeTargetQuad(points, indices, palmWidth * .22 * widthScale)
     drawMeshTriangle(context, image, [sourceQuad[0], sourceQuad[1], sourceQuad[2]], [targetQuad[0], targetQuad[1], targetQuad[2]], opacity)
     drawMeshTriangle(context, image, [sourceQuad[0], sourceQuad[2], sourceQuad[3]], [targetQuad[0], targetQuad[2], targetQuad[3]], opacity)
@@ -262,7 +265,7 @@ export function drawAnchoredAsset(context, image, points, anchors, opacity = .92
   return true
 }
 
-export function drawAnchoredPairAsset(context, image, points, sourceAnchors, landmarkIndexes, opacity = .92) {
+export function drawAnchoredPairAsset(context, image, points, sourceAnchors, landmarkIndexes, opacity = .92, targetWidth) {
   if (!image?.naturalWidth || !image.naturalHeight || !points || !sourceAnchors) return false
   const [sourceStart, sourceEnd] = sourceAnchors
   const [targetStart, targetEnd] = landmarkIndexes.map((index) => points[index] || null)
@@ -273,15 +276,33 @@ export function drawAnchoredPairAsset(context, image, points, sourceAnchors, lan
   const targetDy = targetEnd.y - targetStart.y
   const sourceLength = Math.hypot(sourceDx, sourceDy)
   if (!sourceLength) return false
-  const scale = Math.hypot(targetDx, targetDy) / sourceLength
-  const angle = Math.atan2(targetDy, targetDx) - Math.atan2(sourceDy, sourceDx)
-  context.save()
-  context.translate(targetStart.x, targetStart.y)
-  context.rotate(angle)
-  context.globalAlpha = opacity
-  context.drawImage(image, -sourceStart[0] * scale, -sourceStart[1] * scale, image.naturalWidth * scale, image.naturalHeight * scale)
-  context.restore()
+  const targetLength = Math.hypot(targetDx, targetDy)
+  const sourceWidth = image.naturalWidth
+  const width = targetWidth || sourceWidth * targetLength / sourceLength
+  const sourceQuad = makeSourceQuad(
+    { x: sourceStart[0], y: sourceStart[1] },
+    { x: sourceEnd[0], y: sourceEnd[1] },
+    sourceWidth,
+    sourceWidth,
+  )
+  const targetQuad = makeTargetQuadFromEndpoints(targetStart, targetEnd, width)
+  drawMeshTriangle(context, image, [sourceQuad[0], sourceQuad[1], sourceQuad[2]], [targetQuad[0], targetQuad[1], targetQuad[2]], opacity)
+  drawMeshTriangle(context, image, [sourceQuad[0], sourceQuad[2], sourceQuad[3]], [targetQuad[0], targetQuad[2], targetQuad[3]], opacity)
   return true
+}
+
+function makeTargetQuadFromEndpoints(start, end, width) {
+  const axisX = end.x - start.x
+  const axisY = end.y - start.y
+  const length = Math.hypot(axisX, axisY) || 1
+  const across = { x: -axisY / length, y: axisX / length }
+  const halfWidth = width / 2
+  return [
+    { x: end.x - across.x * halfWidth, y: end.y - across.y * halfWidth },
+    { x: end.x + across.x * halfWidth, y: end.y + across.y * halfWidth },
+    { x: start.x + across.x * halfWidth, y: start.y + across.y * halfWidth },
+    { x: start.x - across.x * halfWidth, y: start.y - across.y * halfWidth },
+  ]
 }
 
 export function drawPreparedHand(context, images, points, config, opacity = .92) {
@@ -294,15 +315,16 @@ export function drawPreparedHand(context, images, points, config, opacity = .92)
   }
   if (config.palmOnly) return drawn
   const fingers = [
-    ['thumb', 2, 4],
-    ['index', 5, 8],
-    ['middle', 9, 12],
-    ['ring', 13, 16],
-    ['pinky', 17, 20],
+    ['thumb', 2, 4, .25],
+    ['index', 5, 8, .2],
+    ['middle', 9, 12, .2],
+    ['ring', 13, 16, .2],
+    ['pinky', 17, 20, .18],
   ]
-  fingers.forEach(([name, mcp, tip]) => {
+  const palmWidth = Math.hypot(points[5].x - points[17].x, points[5].y - points[17].y)
+  fingers.forEach(([name, mcp, tip, widthScale]) => {
     const part = config[name]
-    if (part && images[name]) drawn = drawAnchoredPairAsset(context, images[name], points, [part.mcp, part.tip], [mcp, tip], opacity) || drawn
+    if (part && images[name]) drawn = drawAnchoredPairAsset(context, images[name], points, [part.mcp, part.tip], [mcp, tip], opacity, palmWidth * widthScale) || drawn
   })
   return drawn
 }

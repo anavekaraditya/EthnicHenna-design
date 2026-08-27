@@ -32,38 +32,25 @@ const curatedPortfolioFiles = [
 
 // Each AR asset is authored for a known body surface. Add future designs here
 // with their transparent asset, orientation, opacity, and landmark contract.
+// AR artwork is registered only after its transparent negative space and
+// motif fidelity have been reviewed against the supplied reference.
 const arDesignAssets = {
   '15-01': {
+    assetDirectory: '/ar/reference-15-01',
     surface: 'prepared-hand',
     orientation: 'left-dorsal',
     handSide: 'back-of-hand',
     mirrorForOppositeHand: true,
-    opacity: .88,
+    opacity: .9,
     parts: {
-      palm: {
-        wrist: [125, 950],
-        middle_mcp: [325, 110],
-      },
-      thumb: {
-        mcp: [80, 320],
-        tip: [175, 35],
-      },
-      index: {
-        mcp: [85, 465],
-        tip: [82, 8],
-      },
-      middle: {
-        mcp: [57, 425],
-        tip: [57, 8],
-      },
-      ring: {
-        mcp: [95, 740],
-        tip: [87, 8],
-      },
-      pinky: {
-        mcp: [125, 545],
-        tip: [125, 8],
-      },
+      // Map every transparent region directly to the geometric-glove
+      // landmarks so finger artwork cannot collapse inside one transform.
+      palm: { wrist: [290, 810], middle_mcp: [290, 45] },
+      thumb: { mcp: [95, 160], tip: [45, 50] },
+      index: { mcp: [90, 500], tip: [90, 35] },
+      middle: { mcp: [90, 465], tip: [90, 30] },
+      ring: { mcp: [85, 470], tip: [85, 40] },
+      pinky: { mcp: [80, 370], tip: [80, 45] },
     },
   },
 }
@@ -166,7 +153,7 @@ function Lightbox({ selected, onClose, onPrevious, onNext }) {
       <div className="lightbox" role="dialog" aria-modal="true" aria-label={`Design ${selected.design.id}`} ref={dialogRef} onTouchStart={(event) => { touchStart.current = event.changedTouches[0].clientX }} onTouchEnd={(event) => { const start = touchStart.current; const end = event.changedTouches[0].clientX; if (start && Math.abs(start - end) > 45) start > end ? onNext() : onPrevious(); touchStart.current = null }}>
         <div className="lightbox-toolbar"><span className="lightbox-position">{selected.index + 1} / {selected.collection.designs.length}</span><button className="icon-button" onClick={onClose} ref={closeRef} aria-label="Close design preview"><CloseIcon /></button></div>
         <div className="lightbox-image-frame"><img src={selected.design.src} alt={selected.design.alt} /></div>
-        <div className="lightbox-details"><div><span className="eyebrow">Design {selected.design.id}</span><h2>{selected.collection.label} collection</h2></div><div className="lightbox-actions">{selected.collection.price === 15 && selected.index === 0 && <button className="whatsapp-button lightbox-ar-button" type="button" onClick={() => setShowAr(true)}>Try on your hand</button>}<a className="whatsapp-button" href={whatsappHref} target="_blank" rel="noreferrer"><WhatsAppIcon /> Send it to artist</a></div></div>
+        <div className="lightbox-details"><div><span className="eyebrow">Design {selected.design.id}</span><h2>{selected.collection.label} collection</h2></div><div className="lightbox-actions">{arDesignAssets[selected.design.id] && <button className="whatsapp-button lightbox-ar-button" type="button" onClick={() => setShowAr(true)}>Try on your hand</button>}<a className="whatsapp-button" href={whatsappHref} target="_blank" rel="noreferrer"><WhatsAppIcon /> Send it to artist</a></div></div>
         <div className="lightbox-nav"><button className="nav-button" onClick={onPrevious} aria-label="Previous design"><ArrowIcon direction="left" /> Previous</button><button className="nav-button" onClick={onNext} aria-label="Next design">Next <ArrowIcon /></button></div>
       </div>
       {showAr && <ArPreview design={selected.design} onClose={() => setShowAr(false)} />}
@@ -178,7 +165,7 @@ function ArPreview({ design, onClose }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const artImagesRef = useRef({})
-  const artAssetRef = useRef(arDesignAssets[design.id] || arDesignAssets['15-01'])
+  const artAssetRef = useRef(arDesignAssets[design.id] || { surface: 'none' })
   const streamRef = useRef(null)
   const landmarkerRef = useRef(null)
   const frameRef = useRef(null)
@@ -190,12 +177,19 @@ function ArPreview({ design, onClose }) {
   const [cameraState, setCameraState] = useState('idle')
   const [cameraReady, setCameraReady] = useState(false)
   const [tracking, setTracking] = useState(false)
+  const [cameraFacing, setCameraFacing] = useState('user')
 
   useEffect(() => {
     const asset = artAssetRef.current
     if (asset.surface === 'prepared-hand') {
       const names = ['palm', 'thumb', 'index', 'middle', 'ring', 'pinky']
-      names.forEach((name) => { const image = new Image(); image.src = `/ar/isolated-15-01/henna_${name}.png`; artImagesRef.current[name] = image })
+      names.forEach((name) => {
+        const image = new Image()
+        image.src = asset.assetDirectory
+          ? `${asset.assetDirectory}/${name}.png`
+          : `/ar/isolated-15-01/henna_${name}.png`
+        artImagesRef.current[name] = image
+      })
     } else if (asset.assetPath) {
       const artImage = new Image()
       artImage.src = asset.assetPath
@@ -213,9 +207,11 @@ function ArPreview({ design, onClose }) {
         return
       }
       setCameraState('loading')
+      setCameraReady(false)
+      setTracking(false)
       let stream
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: cameraFacing }, audio: false })
       } catch {
         setCameraError('Camera access was blocked. Allow camera access for this site, then reopen the preview.')
         setCameraState('error')
@@ -253,7 +249,7 @@ function ArPreview({ design, onClose }) {
             const landmarks = result.landmarks?.[0]
             const preparedImagesReady = Object.values(artImagesRef.current).every((image) => image.complete && image.naturalWidth)
             if (hasTrackablePalm(landmarks) && canvasRef.current && preparedImagesReady) {
-              const points = projectLandmarksToDisplay(landmarks, video.videoWidth, video.videoHeight, video.clientWidth, video.clientHeight)
+              const points = projectLandmarksToDisplay(landmarks, video.videoWidth, video.videoHeight, video.clientWidth, video.clientHeight, cameraFacing === 'user')
               const stablePoints = smoothPoints(landmarksRef.current, points, .32)
               landmarksRef.current = stablePoints
               const mesh = createPalmMesh(stablePoints)
@@ -274,7 +270,7 @@ function ArPreview({ design, onClose }) {
               if (artAssetRef.current.surface === 'glove-template') drawGloveTemplate(context, stablePoints, { opacity: .95 })
               else if (artAssetRef.current.surface === 'prepared-hand') drawPreparedHand(context, artImagesRef.current, stablePoints, artAssetRef.current.parts, artAssetRef.current.opacity)
               else if (artAssetRef.current.surface === 'rigid-hand') drawRigidHandArt(context, artImagesRef.current.single, stablePoints, artAssetRef.current.opacity)
-              else if (artAssetRef.current.surface === 'full-hand') drawFullHandMesh(context, artImagesRef.current.single, stablePoints, artAssetRef.current.opacity, artAssetRef.current.palmAnchors)
+              else if (artAssetRef.current.surface === 'full-hand') drawFullHandMesh(context, artImagesRef.current.single, stablePoints, artAssetRef.current.opacity, artAssetRef.current.palmAnchors, artAssetRef.current.sourceLayout)
               else drawPalmMesh(context, artImagesRef.current.single, mesh, artAssetRef.current.opacity)
               setTracking(true)
             } else {
@@ -302,7 +298,7 @@ function ArPreview({ design, onClose }) {
       streamRef.current = null
       if (videoRef.current) videoRef.current.srcObject = null
     }
-  }, [cameraActive])
+  }, [cameraActive, cameraFacing])
 
   const resetPreview = () => {
     meshRef.current = null
@@ -320,6 +316,12 @@ function ArPreview({ design, onClose }) {
     resetPreview()
   }
 
+  const switchCamera = () => {
+    if (!cameraActive) return
+    setCameraError('')
+    setCameraFacing((current) => current === 'user' ? 'environment' : 'user')
+  }
+
   const capturePreview = () => {
     const video = videoRef.current
     const overlay = canvasRef.current
@@ -329,8 +331,10 @@ function ArPreview({ design, onClose }) {
     captureCanvas.height = video.videoHeight
     const context = captureCanvas.getContext('2d')
     if (!context) return
-    context.translate(captureCanvas.width, 0)
-    context.scale(-1, 1)
+    if (cameraFacing === 'user') {
+      context.translate(captureCanvas.width, 0)
+      context.scale(-1, 1)
+    }
     context.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height)
     context.setTransform(1, 0, 0, 1, 0, 0)
     context.drawImage(overlay, 0, 0, overlay.width, overlay.height, 0, 0, captureCanvas.width, captureCanvas.height)
@@ -345,12 +349,12 @@ function ArPreview({ design, onClose }) {
       <div className="ar-preview" role="dialog" aria-modal="true" aria-label={`Try design ${design.id} on your hand`}>
         <div className="ar-preview-header"><div><p className="eyebrow">Live hand preview</p><h2>Try design {design.id}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close hand preview"><CloseIcon /></button></div>
         <div className="ar-camera-stage">
-          <video ref={videoRef} autoPlay muted playsInline aria-label="Live camera preview" />
+          <video ref={videoRef} className={cameraFacing === 'user' ? 'is-mirrored' : ''} autoPlay muted playsInline aria-label={`${cameraFacing === 'user' ? 'Front' : 'Back'} camera preview`} />
           <div className={`ar-camera-placeholder${cameraReady ? ' is-ready' : ''}`} aria-hidden="true">{cameraError ? 'Camera unavailable' : cameraState === 'idle' ? 'Start the camera to try this design' : 'Starting camera…'}</div>
           <canvas ref={canvasRef} className="ar-art-canvas" aria-hidden="true" />
           {!cameraError && cameraActive && <p className="ar-tracking-status" role="status">{tracking ? 'Hand detected' : 'Show one hand to the camera'}</p>}
         </div>
-        <div className="ar-preview-controls"><p>The camera tracks your hand and follows its movement, size, and rotation in real time.</p>{cameraError && <p className="ar-preview-error" role="status">{cameraError}</p>}<div className="ar-preview-actions">{!cameraActive ? <button className="whatsapp-button lightbox-ar-button" type="button" onClick={() => { setCameraError(''); setCameraActive(true) }}>Start camera</button> : <button className="nav-button" type="button" onClick={stopCamera}>Stop camera</button>}<button className="nav-button" type="button" onClick={resetPreview}>Reset</button><button className="nav-button" type="button" onClick={capturePreview} disabled={!cameraReady || !tracking}>Save preview</button></div><p className="ar-preview-note">This design uses a palm asset and separate finger assets, each calibrated to hand landmarks. Camera frames stay in this browser.</p></div>
+        <div className="ar-preview-controls"><p>The camera tracks your hand and follows its movement, size, and rotation in real time.</p>{cameraError && <p className="ar-preview-error" role="status">{cameraError}</p>}<div className="ar-preview-actions">{!cameraActive ? <button className="whatsapp-button lightbox-ar-button" type="button" onClick={() => { setCameraError(''); setCameraActive(true) }}>Start camera</button> : <><button className="nav-button" type="button" onClick={switchCamera}>Switch camera</button><button className="nav-button" type="button" onClick={stopCamera}>Stop camera</button></>}<button className="nav-button" type="button" onClick={resetPreview}>Reset</button><button className="nav-button" type="button" onClick={capturePreview} disabled={!cameraReady || !tracking}>Save preview</button></div><p className="ar-preview-note">This design uses a palm asset and separate finger assets, each calibrated to hand landmarks. Camera frames stay in this browser.</p></div>
       </div>
     </div>
   )
