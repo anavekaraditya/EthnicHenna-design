@@ -2,6 +2,7 @@ import React, { StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 import { createPalmMesh, drawAnchoredAsset, drawFullHandMesh, drawGloveTemplate, drawPalmMesh, drawPreparedHand, drawRigidHandArt, hasTrackablePalm, projectLandmarksToDisplay, smoothPoints } from './ar/palmMesh.js'
+import { applySeoMetadata, getPageKey } from './seo.js'
 import './styles.css'
 
 const imageFiles = {
@@ -29,6 +30,57 @@ const curatedPortfolioFiles = [
   '/portfolio/ethnic-henna-10.jpg',
   '/portfolio/ethnic-henna-01.jpg',
 ]
+
+const portfolioAltTexts = [
+  'Detailed henna patterns across two hands on a golden textile',
+  'Paired hands decorated with intricate floral henna',
+  'Fine henna details across a decorated hand and wrist',
+  'Bridal hands with ornate henna against a rich red outfit',
+  'Intricate henna on hands framed by colorful bridal textiles',
+  'A detailed henna hand resting against embroidered fabric',
+  'Bridal henna details paired with red and gold jewelry',
+  'Deep brown bridal henna across hands resting on light embroidery',
+  'Henna-covered hands styled with colorful bridal bangles',
+  'A close view of patterned henna across a decorated hand',
+  'Floral and geometric henna details across a palm and fingers',
+  'A full hand henna composition with layered floral motifs',
+  'Detailed henna patterns on hands styled for a celebration',
+  'Fine henna bands and florals across a hand and wrist',
+]
+
+const portfolioDimensions = {
+  'ethnic-henna-01.jpg': [1440, 1800],
+  'ethnic-henna-02.jpg': [1440, 1800],
+  'ethnic-henna-04.jpg': [3072, 4096],
+  'ethnic-henna-05.jpg': [2925, 3900],
+  'ethnic-henna-06.jpg': [3072, 4096],
+  'ethnic-henna-07.jpg': [2534, 3378],
+  'ethnic-henna-08.jpg': [3072, 4096],
+  'ethnic-henna-09.jpg': [2870, 3826],
+  'ethnic-henna-10.jpg': [1440, 1440],
+  'ethnic-henna-11.jpg': [1440, 1800],
+  'ethnic-henna-12.jpg': [2228, 2189],
+  'ethnic-henna-13.jpg': [2268, 2228],
+  'ethnic-henna-14.jpg': [682, 1024],
+  'ethnic-henna-15.jpg': [1090, 1078],
+  'ethnic-henna-16.jpg': [1125, 1163],
+  'ethnic-henna-17.jpg': [576, 1024],
+}
+
+function portfolioData() {
+  return curatedPortfolioFiles.map((src, index) => ({
+    src,
+    id: `portfolio-${String(index + 1).padStart(2, '0')}`,
+    alt: portfolioAltTexts[index] || 'Detailed henna work on a hand',
+  }))
+}
+
+function PortfolioImage({ design, loading = 'lazy' }) {
+  const filename = design.src.split('/').pop().replace(/\.jpg$/i, '')
+  const optimizedSrcSet = `/portfolio/optimized/${filename}-800.webp 800w, /portfolio/optimized/${filename}-1400.webp 1400w`
+  const [width, height] = portfolioDimensions[`${filename}.jpg`] || [1400, 1750]
+  return <picture className="portfolio-image-picture"><source type="image/webp" srcSet={optimizedSrcSet} sizes="(max-width: 720px) 50vw, 25vw" /><img src={design.src} alt={design.alt} loading={loading} decoding="async" width={width} height={height} /></picture>
+}
 
 // Each AR asset is authored for a known body surface. Add future designs here
 // with their transparent asset, orientation, opacity, and landmark contract.
@@ -666,16 +718,16 @@ function AdminDashboard({ onLogout }) {
 }
 
 function LandingPage() {
-  const portfolio = curatedPortfolioFiles.map((src, index) => ({ src, id: `portfolio-${String(index + 1).padStart(2, '0')}`, alt: `Curated henna portfolio design ${index + 1}` }))
+  const portfolio = portfolioData()
   const servicesWhatsApp = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent('Hi Deepali, I would like to inquire about your henna services.')}`
 
   return (
     <div className="landing-page home-page">
       <PublicNav />
       <main>
-        <section className="landing-hero"><img className="landing-hero-background" src="/ethnic-henna-hero.png" alt="Hand with intricate henna and delicate rose-gold details" /><div className="landing-hero-copy"><p className="eyebrow">Ethnic Henna by Deepali</p><h1>Henna for moments that become <em>memories.</em></h1><p className="landing-hero-intro">Handcrafted henna for bridal stories, celebrations, and gatherings that deserve a beautiful mark.</p><div className="landing-hero-actions"><a className="landing-primary-cta" href="/work">View portfolio <ArrowIcon /></a><a className="landing-secondary-cta" href="/bridal">View bridal pricing</a></div></div></section>
-        <section className="landing-portfolio" id="portfolio"><div className="landing-section-heading"><div><p className="eyebrow">A curated portfolio</p><h2>Find the feeling<br /><em>you want to wear.</em></h2></div><div className="landing-portfolio-heading-side"><p className="landing-portfolio-note">A selection of Deepali’s finest work.</p><a className="landing-inline-link" href="/work">View all portfolio work <ArrowIcon /></a></div></div><div className="landing-portfolio-grid">{portfolio.map((design) => <div className="landing-portfolio-tile" key={design.id}><img src={design.src} alt={design.alt} loading="lazy" /></div>)}</div></section>
-        <section className="landing-services"><div className="landing-services-copy"><p className="eyebrow">Services by Ethnic Henna</p><h2>Art for every<br /><em>kind of gathering.</em></h2><p>From intimate celebrations to full bridal stories, every design is drawn with care and shaped around the moment, the people, and the feeling you want to remember.</p><a className="landing-light-cta" href={servicesWhatsApp} target="_blank" rel="noreferrer">Ask about your occasion <ArrowIcon /></a></div><div className="landing-service-list"><div><span>01</span><strong>Bridal henna</strong><small>Custom coverage for your day</small></div><div><span>02</span><strong>Parties & celebrations</strong><small>Beautiful details for every guest</small></div><div><span>03</span><strong>Group events</strong><small>Memorable art for shared occasions</small></div></div></section>
+        <section className="landing-hero"><picture className="landing-hero-background-picture"><source type="image/webp" srcSet="/optimized/ethnic-henna-hero.webp" /><img className="landing-hero-background" src="/ethnic-henna-hero.png" alt="Hand with intricate henna and delicate rose-gold details" width="1600" height="1600" fetchPriority="high" decoding="async" /></picture><div className="landing-hero-copy"><p className="eyebrow">Ethnic Henna by Deepali</p><h1>Henna artist in San Ramon<br /><em>for moments that matter.</em></h1><p className="landing-hero-intro">Ethnic Henna creates thoughtful mehndi for bridal stories, celebrations, and gatherings in San Ramon and throughout the Bay Area.</p><div className="landing-hero-actions"><a className="landing-primary-cta" href="/work">View portfolio <ArrowIcon /></a><a className="landing-secondary-cta" href="/bridal">View bridal pricing</a></div></div></section>
+        <section className="landing-portfolio" id="portfolio"><div className="landing-section-heading"><div><p className="eyebrow">A curated portfolio</p><h2>Find the feeling<br /><em>you want to wear.</em></h2></div><div className="landing-portfolio-heading-side"><p className="landing-portfolio-note">A selection of Deepali’s finest work.</p><a className="landing-inline-link" href="/work">View all portfolio work <ArrowIcon /></a></div></div><div className="landing-portfolio-grid">{portfolio.map((design) => <div className="landing-portfolio-tile" key={design.id}><PortfolioImage design={design} /></div>)}</div></section>
+        <section className="landing-services"><div className="landing-services-copy"><p className="eyebrow">Services by Ethnic Henna</p><h2>Art for every<br /><em>kind of gathering.</em></h2><p>From intimate celebrations to full bridal stories, every design is drawn with care and shaped around the moment, the people, and the feeling you want to remember.</p><p className="service-area-copy">Based in San Ramon, Ethnic Henna serves bridal celebrations, parties, and custom gatherings across the Bay Area.</p><a className="landing-light-cta" href={servicesWhatsApp} target="_blank" rel="noreferrer">Ask about your occasion <ArrowIcon /></a></div><div className="landing-service-list"><div><span>01</span><strong>Bridal henna</strong><small>Custom coverage for your day</small></div><div><span>02</span><strong>Parties & celebrations</strong><small>Beautiful details for every guest</small></div><div><span>03</span><strong>Group events</strong><small>Memorable art for shared occasions</small></div></div></section>
         <section className="landing-final-cta"><p className="eyebrow">Your story starts here</p><h2>Let’s make it<br /><em>beautifully yours.</em></h2><a className="landing-primary-cta" href="/designs">Browse the design menu <ArrowIcon /></a></section>
       </main>
       <footer className="landing-footer"><span>© {new Date().getFullYear()} Deepali Henna Artist</span><span>Ethnic. Henna by Deepali</span></footer>
@@ -691,8 +743,8 @@ function BridalPage() {
     <div className="bridal-page landing-page">
       <PublicNav current="bridal" />
       <main>
-        <section className="public-hero bridal-hero"><img className="public-hero-background" src="/bridal-hero.png" alt="Bridal hands decorated with intricate henna" /><div className="public-hero-copy"><p className="eyebrow">Premium bridal henna</p><h1>A crowning detail<br /><em>for your day.</em></h1><p>Customized, intricate henna designed around your ceremony, your vision, and the story you want to carry with you.</p><a className="landing-primary-cta" href={bridalWhatsApp} target="_blank" rel="noreferrer">Start a bridal conversation <ArrowIcon /></a></div></section>
-        <section className="bridal-service-rate"><div><p className="eyebrow">Bridal service</p><h2>Thoughtful coverage,<br /><em>beautifully considered.</em></h2></div><div className="bridal-rate-number"><span>Starting at</span><strong>$120</strong><p>per hour + travel</p></div></section>
+        <section className="public-hero bridal-hero"><img className="public-hero-background" src="/bridal-hero.png" alt="Bridal hands decorated with intricate henna" loading="eager" fetchPriority="high" decoding="async" /><div className="public-hero-copy"><p className="eyebrow">Premium bridal henna</p><h1>A crowning detail<br /><em>for your day.</em></h1><p>Customized, intricate henna designed around your ceremony, your vision, and the story you want to carry with you in San Ramon and throughout the Bay Area.</p><a className="landing-primary-cta" href={bridalWhatsApp} target="_blank" rel="noreferrer">Start a bridal conversation <ArrowIcon /></a></div></section>
+        <section className="bridal-service-rate"><div><p className="eyebrow">Bridal service</p><h2>Thoughtful coverage,<br /><em>beautifully considered.</em></h2></div><div className="bridal-rate-number"><span>Bridal service</span><strong>$120</strong><p>per hour + travel</p></div></section>
         <section className="bridal-packages"><div className="bridal-heading"><div><p className="eyebrow">Choose your coverage</p><h2>Made to meet<br /><em>your moment.</em></h2></div><p>Each length is a starting point for a custom conversation. We’ll shape the final design around your preferences and celebration.</p></div><div className="bridal-package-layout"><div className="bridal-illustration"><img src="/bridal-lengths.png" alt="Hand and arm illustrations showing bridal henna coverage lengths one through five" /><p>Coverage guide · Lengths 1–5</p></div><div className="bridal-pricing" aria-label="Bridal henna package pricing">{bridalPackages.map(([length, price]) => <div className="bridal-price-row" key={length}><span>{length}</span><strong>{price}</strong></div>)}<p className="bridal-pricing-note">Final pricing is confirmed after discussing your design, coverage, and event details.</p></div></div></section>
         <section className="landing-final-cta"><p className="eyebrow">Your bridal story starts here</p><h2>Let’s make it<br /><em>beautifully yours.</em></h2><a className="landing-primary-cta" href={bridalWhatsApp} target="_blank" rel="noreferrer">Inquire on WhatsApp <ArrowIcon /></a></section>
       </main>
@@ -702,7 +754,7 @@ function BridalPage() {
 }
 
 function WorkPage() {
-  const portfolio = curatedPortfolioFiles.map((src, index) => ({ src, id: `portfolio-${String(index + 1).padStart(2, '0')}`, alt: `Curated henna portfolio design ${index + 1}` }))
+  const portfolio = portfolioData()
   const [selectedImage, setSelectedImage] = useState(null)
 
   useEffect(() => {
@@ -722,8 +774,8 @@ function WorkPage() {
     <div className="work-detail-page landing-page">
       <PublicNav current="work" />
       <main>
-        <section className="public-hero work-detail-hero"><img className="public-hero-background" src="/work-hero.png" alt="Detailed henna work on a hand" /><div className="public-hero-copy"><p className="eyebrow">The Ethnic Henna portfolio</p><h1>Work that carries<br /><em>the moment.</em></h1><p>A closer look at Deepali’s curated henna work, from intimate details to full bridal artistry.</p><a className="landing-primary-cta" href="#portfolio-work">View the portfolio <ArrowIcon /></a></div></section>
-        <section className="work-detail-gallery" id="portfolio-work" aria-label="Curated portfolio gallery">{portfolio.map((design, index) => <figure className="work-detail-photo" key={design.id}><button className="work-detail-photo-button" onClick={() => setSelectedImage(design)} aria-label={`Open ${design.alt}`}><img src={design.src} alt={design.alt} loading={index > 2 ? 'lazy' : 'eager'} /></button></figure>)}</section>
+        <section className="public-hero work-detail-hero"><img className="public-hero-background" src="/work-hero.png" alt="Detailed henna work on a hand" loading="eager" fetchPriority="high" decoding="async" /><div className="public-hero-copy"><p className="eyebrow">The Ethnic Henna portfolio</p><h1>Work that carries<br /><em>the moment.</em></h1><p>A closer look at Deepali’s curated henna work, from intimate details to full bridal artistry.</p><a className="landing-primary-cta" href="#portfolio-work">View the portfolio <ArrowIcon /></a></div></section>
+        <section className="work-detail-gallery" id="portfolio-work" aria-label="Curated portfolio gallery">{portfolio.map((design, index) => <figure className="work-detail-photo" key={design.id}><button className="work-detail-photo-button" onClick={() => setSelectedImage(design)} aria-label={`Open ${design.alt}`}><PortfolioImage design={design} loading={index > 2 ? 'lazy' : 'eager'} /></button></figure>)}</section>
         <section className="work-detail-cta"><p className="eyebrow">Looking for your own?</p><h2>Let’s create something<br /><em>beautifully yours.</em></h2><div><a className="landing-primary-cta" href="/designs">Design by Pricing <ArrowIcon /></a><a className="landing-secondary-cta" href="/bridal">Explore bridal work</a></div></section>
       </main>
       {selectedImage && <div className="work-image-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedImage(null) }}><div className="work-image-dialog" role="dialog" aria-modal="true" aria-label={selectedImage.alt}><button className="work-image-close" onClick={() => setSelectedImage(null)} autoFocus aria-label="Close image preview">×</button><img src={selectedImage.src} alt={selectedImage.alt} /></div></div>}
@@ -738,9 +790,9 @@ function EventsPage() {
     <div className="events-page landing-page">
       <PublicNav current="events" />
       <main>
-        <section className="public-hero events-hero"><img className="public-hero-background" src="/events-hero.png" alt="Henna decorated hands ready for a celebration" /><div className="public-hero-copy"><p className="eyebrow">Parties · celebrations · group events</p><h1>Make room for<br /><em>the joyful details.</em></h1><p>Ethnic Henna brings thoughtful, personalized henna to weddings, birthdays, parties, and group celebrations.</p><a className="landing-primary-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Inquire about your event <ArrowIcon /></a></div></section>
+        <section className="public-hero events-hero"><img className="public-hero-background" src="/events-hero.png" alt="Henna decorated hands ready for a celebration" loading="eager" fetchPriority="high" decoding="async" /><div className="public-hero-copy"><p className="eyebrow">Parties · celebrations · group events</p><h1>Make room for<br /><em>the joyful details.</em></h1><p>Ethnic Henna brings thoughtful, personalized henna to weddings, birthdays, parties, and group celebrations in San Ramon and across the Bay Area.</p><a className="landing-primary-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Inquire about your event <ArrowIcon /></a></div></section>
         <section className="events-overview"><div><p className="eyebrow">A personalized experience</p><h2>Every guest leaves<br /><em>with a memento.</em></h2></div><p>Beyond individual sessions, Deepali creates a sophisticated experience for your guests, ensuring that each design feels personal and each celebration feels beautifully considered.</p></section>
-        <section className="events-rate-section"><div className="events-rate-copy"><p className="eyebrow">Hourly event service</p><h2>Bring Ethnic Henna<br /><em>to your occasion.</em></h2><p>For regular events such as weddings, birthdays, parties, and group gatherings, pricing is based on the time needed for your event, plus travel.</p><a className="landing-light-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Discuss your event details <ArrowIcon /></a></div><div className="events-rate-card"><span>Starting at</span><strong>$120</strong><p>per hour + travel</p></div></section>
+        <section className="events-rate-section"><div className="events-rate-copy"><p className="eyebrow">Hourly event service</p><h2>Bring Ethnic Henna<br /><em>to your occasion.</em></h2><p>For regular events such as weddings, birthdays, parties, and group gatherings, pricing is based on the time needed for your event, plus travel. Contact Deepali for a quote tailored to your celebration.</p><a className="landing-light-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Discuss your event details <ArrowIcon /></a></div><div className="events-rate-card"><span>Event pricing</span><strong>By<br />inquiry</strong><p>Hourly service + travel</p></div></section>
         <section className="events-list-section"><p className="eyebrow">Great for</p><div className="events-list"><span><b>01</b> Weddings</span><span><b>02</b> Birthdays</span><span><b>03</b> Parties</span><span><b>04</b> Group celebrations</span></div></section>
         <section className="landing-final-cta"><p className="eyebrow">Plan something memorable</p><h2>Let’s create a<br /><em>beautiful gathering.</em></h2><a className="landing-primary-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Start an event inquiry <ArrowIcon /></a></section>
       </main>
@@ -764,7 +816,7 @@ function App() {
     <div className="designs-page landing-page">
       <PublicNav current="pricing" />
       <main id="top">
-        <section className="public-hero designs-hero"><img className="public-hero-background" src="/designs-hero.png" alt="Intricate henna designs on hands" /><div className="public-hero-copy"><p className="eyebrow">Design by pricing</p><h1>Find a design<br /><em>that feels like you.</em></h1><p>A curated collection of handpicked henna designs, arranged by price and ready for your next celebration.</p><a href="#collections" className="landing-primary-cta">Browse the collections <ArrowIcon /></a></div></section>
+        <section className="public-hero designs-hero"><img className="public-hero-background" src="/designs-hero.png" alt="Intricate henna designs on hands" loading="eager" fetchPriority="high" decoding="async" /><div className="public-hero-copy"><p className="eyebrow">Design by pricing</p><h1>Find a design<br /><em>that feels like you.</em></h1><p>A curated collection of handpicked henna designs, arranged by price and ready for your next celebration.</p><a href="#collections" className="landing-primary-cta">Browse the collections <ArrowIcon /></a></div></section>
         <section className="collections-section" id="collections"><div className="section-heading"><div><p className="eyebrow">Choose your collection</p><h2>Three ways to wear<br /><em>your story.</em></h2></div><p>Start with a price point, then tap any design to see it up close.</p></div><div className="collection-grid">{collections.map((collection) => <CollectionCard key={collection.price} collection={collection} onSelect={selectCollection} />)}</div></section>
         {activeCollection && <section className="gallery-section gallery-enter" ref={galleryRef} id="gallery" aria-labelledby="gallery-title"><div className="gallery-heading"><div><p className="eyebrow">Your selection</p><h2 id="gallery-title">The {activeCollection.label} collection</h2></div><button className="change-collection" onClick={() => { setActivePrice(null); document.querySelector('#collections')?.scrollIntoView({ behavior: 'smooth' }) }}>Change price <span>↗</span></button></div><div className="gallery-grid">{activeCollection.designs.map((design, index) => <button className="design-tile" key={design.id} onClick={() => openDesign(activeCollection, index)} aria-label={`Open design ${design.id}, ${activeCollection.label}`}><img src={design.src} alt={design.alt} loading="lazy" /><span className="design-number">{design.id}</span><span className="view-design">View <ArrowIcon /></span></button>)}</div></section>}
         <section className="closing-section"><div className="closing-mark">✦</div><p className="eyebrow">The final touch</p><h2>Found one<br /><em>you love?</em></h2><p>Send Deepali the design number on WhatsApp and start your conversation.</p><a className="whatsapp-button whatsapp-button-dark" href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer"><WhatsAppIcon /> Say hello on WhatsApp</a></section>
@@ -775,12 +827,14 @@ function App() {
   )
 }
 
-const isAdminRoute = window.location.pathname.replace(/\/$/, '') === '/admin' || window.location.hash === '#admin'
-const isDesignsRoute = window.location.pathname.replace(/\/$/, '') === '/designs' || window.location.hash === '#collections'
-const isBridalRoute = window.location.pathname.replace(/\/$/, '') === '/bridal' || window.location.hash === '#bridal'
-const isEventsRoute = window.location.pathname.replace(/\/$/, '') === '/events'
-const isWorkRoute = window.location.pathname.replace(/\/$/, '') === '/work'
-const isHomeRoute = window.location.pathname.replace(/\/$/, '') === ''
+const pageKey = getPageKey(window.location.pathname, window.location.hash)
+applySeoMetadata(pageKey)
+const isAdminRoute = pageKey === 'admin'
+const isDesignsRoute = pageKey === 'designs'
+const isBridalRoute = pageKey === 'bridal'
+const isEventsRoute = pageKey === 'events'
+const isWorkRoute = pageKey === 'work'
+const isHomeRoute = pageKey === 'home'
 createRoot(document.getElementById('root')).render(<StrictMode>{isAdminRoute ? <AdminRoute /> : isDesignsRoute ? <App /> : isBridalRoute ? <BridalPage /> : isEventsRoute ? <EventsPage /> : isWorkRoute ? <WorkPage /> : isHomeRoute ? <LandingPage /> : <LandingPage />}</StrictMode>)
 
 function AdminRoute() {
