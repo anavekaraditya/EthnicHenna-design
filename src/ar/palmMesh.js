@@ -324,7 +324,8 @@ export function drawPreparedHand(context, images, points, config, opacity = .92)
   const palmWidth = Math.hypot(points[5].x - points[17].x, points[5].y - points[17].y)
   fingers.forEach(([name, mcp, tip, widthScale]) => {
     const part = config[name]
-    if (part && images[name]) drawn = drawAnchoredPairAsset(context, images[name], points, [part.mcp, part.tip], [mcp, tip], opacity, palmWidth * widthScale) || drawn
+    const targetRange = part?.landmarks || [mcp, tip]
+    if (part && images[name]) drawn = drawAnchoredPairAsset(context, images[name], points, [part.mcp, part.tip], targetRange, opacity, palmWidth * widthScale) || drawn
   })
   return drawn
 }

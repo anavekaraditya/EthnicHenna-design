@@ -53,6 +53,57 @@ const arDesignAssets = {
       pinky: { mcp: [80, 370], tip: [80, 45] },
     },
   },
+  // 20-11 is intentionally the only new asset in this pass. Its artwork is
+  // authored as one palm region plus one middle-finger region, matching the
+  // same geometric-glove landmarks used by the locked 15-01 setup.
+  '20-11': {
+    assetDirectory: '/ar/reference-20-11',
+    surface: 'prepared-hand',
+    orientation: 'left-dorsal',
+    handSide: 'back-of-hand',
+    mirrorForOppositeHand: true,
+    opacity: .9,
+    parts: {
+      palm: { wrist: [434, 874], middle_mcp: [434, 130] },
+      middle: { mcp: [163, 410], tip: [163, 30] },
+    },
+  },
+  '20-04': {
+    assetDirectory: '/ar/reference-20-04',
+    surface: 'prepared-hand',
+    orientation: 'left-dorsal',
+    handSide: 'back-of-hand',
+    mirrorForOppositeHand: true,
+    opacity: .9,
+    parts: {
+      palm: { wrist: [430, 1015], middle_mcp: [430, 120] },
+      thumb: { mcp: [92, 375], tip: [92, 25], landmarks: [2, 4] },
+      index: { mcp: [98, 425], tip: [98, 25], landmarks: [6, 8] },
+      middle: { mcp: [100, 420], tip: [100, 20] },
+      ring: { mcp: [100, 400], tip: [100, 20], landmarks: [13, 15] },
+      pinky: { mcp: [92, 365], tip: [92, 20], landmarks: [17, 19] },
+    },
+  },
+  '25-02': {
+    assetDirectory: '/ar/reference-25-02',
+    surface: 'prepared-hand',
+    orientation: 'left-dorsal',
+    handSide: 'back-of-hand',
+    mirrorForOppositeHand: true,
+    opacity: .9,
+    parts: {
+      palm: { wrist: [390, 710], middle_mcp: [390, 20] },
+      thumb: { mcp: [95, 560], tip: [95, 20], landmarks: [2, 4] },
+      // This asset is tightly cropped to the index motif. The lower anchor
+      // sits at the last hanging leaf, which is the visual base of the art;
+      // anchoring it to the PIP avoids stretching the entire crop across the
+      // finger and keeps the neighboring motif out of the transform.
+      index: { mcp: [72, 500], tip: [72, 20], landmarks: [6, 8] },
+      middle: { mcp: [132, 730], tip: [132, 20], landmarks: [9, 12] },
+      ring: { mcp: [115, 650], tip: [115, 20], landmarks: [13, 15] },
+      pinky: { mcp: [110, 630], tip: [110, 20], landmarks: [17, 19] },
+    },
+  },
 }
 
 const initialCollections = Object.entries(imageFiles).map(([price, files]) => ({
@@ -178,13 +229,26 @@ function ArPreview({ design, onClose }) {
   const [cameraReady, setCameraReady] = useState(false)
   const [tracking, setTracking] = useState(false)
   const [cameraFacing, setCameraFacing] = useState('user')
+  const [artLoading, setArtLoading] = useState(true)
+  const [artError, setArtError] = useState('')
 
   useEffect(() => {
     const asset = artAssetRef.current
     if (asset.surface === 'prepared-hand') {
       const names = ['palm', 'thumb', 'index', 'middle', 'ring', 'pinky']
-      names.forEach((name) => {
+      const requiredNames = names.filter((name) => asset.parts?.[name] || name === 'palm')
+      let loadedCount = 0
+      const markLoaded = () => {
+        loadedCount += 1
+        if (loadedCount === requiredNames.length) setArtLoading(false)
+      }
+      requiredNames.forEach((name) => {
         const image = new Image()
+        image.onload = markLoaded
+        image.onerror = () => {
+          setArtError(`The ${name} artwork could not be loaded.`)
+          setArtLoading(false)
+        }
         image.src = asset.assetDirectory
           ? `${asset.assetDirectory}/${name}.png`
           : `/ar/isolated-15-01/henna_${name}.png`
@@ -192,8 +256,15 @@ function ArPreview({ design, onClose }) {
       })
     } else if (asset.assetPath) {
       const artImage = new Image()
+      artImage.onload = () => setArtLoading(false)
+      artImage.onerror = () => {
+        setArtError('The selected artwork could not be loaded.')
+        setArtLoading(false)
+      }
       artImage.src = asset.assetPath
       artImagesRef.current.single = artImage
+    } else {
+      setArtLoading(false)
     }
   }, [])
 
@@ -248,7 +319,15 @@ function ArPreview({ design, onClose }) {
             const result = landmarker.detectForVideo(video, performance.now())
             const landmarks = result.landmarks?.[0]
             const preparedImagesReady = Object.values(artImagesRef.current).every((image) => image.complete && image.naturalWidth)
-            if (hasTrackablePalm(landmarks) && canvasRef.current && preparedImagesReady) {
+            if (hasTrackablePalm(landmarks) && canvasRef.current) {
+              // Keep tracking status independent from artwork readiness. A
+              // missing asset must never be presented as a missing hand.
+              setTracking(true)
+              if (!preparedImagesReady) {
+                canvasRef.current.getContext('2d')?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+                frameRef.current = requestAnimationFrame(trackHand)
+                return
+              }
               const points = projectLandmarksToDisplay(landmarks, video.videoWidth, video.videoHeight, video.clientWidth, video.clientHeight, cameraFacing === 'user')
               const stablePoints = smoothPoints(landmarksRef.current, points, .32)
               landmarksRef.current = stablePoints
@@ -272,7 +351,6 @@ function ArPreview({ design, onClose }) {
               else if (artAssetRef.current.surface === 'rigid-hand') drawRigidHandArt(context, artImagesRef.current.single, stablePoints, artAssetRef.current.opacity)
               else if (artAssetRef.current.surface === 'full-hand') drawFullHandMesh(context, artImagesRef.current.single, stablePoints, artAssetRef.current.opacity, artAssetRef.current.palmAnchors, artAssetRef.current.sourceLayout)
               else drawPalmMesh(context, artImagesRef.current.single, mesh, artAssetRef.current.opacity)
-              setTracking(true)
             } else {
               if (canvasRef.current) canvasRef.current.getContext('2d')?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
               meshRef.current = null
@@ -352,7 +430,7 @@ function ArPreview({ design, onClose }) {
           <video ref={videoRef} className={cameraFacing === 'user' ? 'is-mirrored' : ''} autoPlay muted playsInline aria-label={`${cameraFacing === 'user' ? 'Front' : 'Back'} camera preview`} />
           <div className={`ar-camera-placeholder${cameraReady ? ' is-ready' : ''}`} aria-hidden="true">{cameraError ? 'Camera unavailable' : cameraState === 'idle' ? 'Start the camera to try this design' : 'Starting camera…'}</div>
           <canvas ref={canvasRef} className="ar-art-canvas" aria-hidden="true" />
-          {!cameraError && cameraActive && <p className="ar-tracking-status" role="status">{tracking ? 'Hand detected' : 'Show one hand to the camera'}</p>}
+          {!cameraError && cameraActive && <p className="ar-tracking-status" role="status">{tracking ? (artError ? artError : artLoading ? 'Hand detected · Loading design' : 'Hand detected') : 'Show one hand to the camera'}</p>}
         </div>
         <div className="ar-preview-controls"><p>The camera tracks your hand and follows its movement, size, and rotation in real time.</p>{cameraError && <p className="ar-preview-error" role="status">{cameraError}</p>}<div className="ar-preview-actions">{!cameraActive ? <button className="whatsapp-button lightbox-ar-button" type="button" onClick={() => { setCameraError(''); setCameraActive(true) }}>Start camera</button> : <><button className="nav-button" type="button" onClick={switchCamera}>Switch camera</button><button className="nav-button" type="button" onClick={stopCamera}>Stop camera</button></>}<button className="nav-button" type="button" onClick={resetPreview}>Reset</button><button className="nav-button" type="button" onClick={capturePreview} disabled={!cameraReady || !tracking}>Save preview</button></div><p className="ar-preview-note">This design uses a palm asset and separate finger assets, each calibrated to hand landmarks. Camera frames stay in this browser.</p></div>
       </div>
