@@ -8,6 +8,9 @@
     { "source": "/bridal/(.*)", "destination": "/index.html" },
     { "source": "/work", "destination": "/index.html" },
     { "source": "/events", "destination": "/index.html" },
-    { "source": "/events/(.*)", "destination": "/index.html" }
+    { "source": "/events/(.*)", "destination": "/index.html" },
+    { "source": "/queue", "destination": "/index.html" },
+    { "source": "/queue/(.*)", "destination": "/index.html" },
+    { "source": "/queue-manage", "destination": "/index.html" }
   ]
 }

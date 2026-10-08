@@ -1,0 +1,18 @@
+{
+  "id": "/queue",
+  "name": "Ethnic Henna Queue",
+  "short_name": "Henna Queue",
+  "start_url": "/queue",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f0e9",
+  "theme_color": "#f7f0e9",
+  "icons": [
+    {
+      "src": "/brand/logo-mark.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

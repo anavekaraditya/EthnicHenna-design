@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 import { createPalmMesh, drawAnchoredAsset, drawFullHandMesh, drawGloveTemplate, drawPalmMesh, drawPreparedHand, drawRigidHandArt, hasTrackablePalm, projectLandmarksToDisplay, smoothPoints } from './ar/palmMesh.js'
 import { applySeoMetadata, getPageKey } from './seo.js'
+import { QueueGuestPage } from './queue/QueueGuestPage.jsx'
+import { QueueManagePage } from './queue/QueueManagePage.jsx'
 import './styles.css'
 
 const imageFiles = {
@@ -909,7 +911,9 @@ const isBridalRoute = pageKey === 'bridal'
 const isEventsRoute = pageKey === 'events'
 const isWorkRoute = pageKey === 'work'
 const isHomeRoute = pageKey === 'home'
-createRoot(document.getElementById('root')).render(<StrictMode>{isAdminRoute ? <AdminRoute /> : isDesignsRoute ? <App /> : isBridalRoute ? <BridalPage /> : isEventsRoute ? <EventsPage /> : isWorkRoute ? <WorkPage /> : isHomeRoute ? <LandingPage /> : <LandingPage />}</StrictMode>)
+const isQueueRoute = pageKey === 'queue'
+const isQueueManageRoute = pageKey === 'queue-manage'
+createRoot(document.getElementById('root')).render(<StrictMode>{isQueueManageRoute ? <QueueManagePage /> : isQueueRoute ? <QueueGuestPage /> : isAdminRoute ? <AdminRoute /> : isDesignsRoute ? <App /> : isBridalRoute ? <BridalPage /> : isEventsRoute ? <EventsPage /> : isWorkRoute ? <WorkPage /> : isHomeRoute ? <LandingPage /> : <LandingPage />}</StrictMode>)
 
 function AdminRoute() {
   const [authenticated, setAuthenticated] = useState(() => sessionStorage.getItem(adminSessionKey) === 'active')

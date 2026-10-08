@@ -59,6 +59,23 @@ export const seoPages = {
     imageAlt: 'Ethnic Henna logo mark',
     robots: 'noindex,nofollow,noarchive',
   },
+  queue: {
+    path: '/queue',
+    title: 'Henna Event Queue | Ethnic Henna',
+    description: 'Skip the line, not your turn. Join Ethnic Henna’s live event queue and get browser alerts when your henna is getting close.',
+    h1: 'Skip the line, not your turn.',
+    image: '/brand/logo-mark.png',
+    imageAlt: 'Ethnic Henna logo mark',
+    robots: 'noindex,nofollow',
+  },
+  'queue-manage': {
+    path: '/queue/manage',
+    title: 'Henna Queue Dashboard | Ethnic Henna',
+    description: 'Private live event queue dashboard for Ethnic Henna.',
+    image: '/brand/logo-mark.png',
+    imageAlt: 'Ethnic Henna logo mark',
+    robots: 'noindex,nofollow,noarchive',
+  },
 }
 
 export function canonicalUrl(path) {
@@ -68,6 +85,8 @@ export function canonicalUrl(path) {
 export function getPageKey(pathname = '/', hash = '') {
   const path = pathname.replace(/\/$/, '') || '/'
   if (path === '/admin' || hash === '#admin') return 'admin'
+  if (path === '/queue/manage' || path === '/queue-manage') return 'queue-manage'
+  if (path === '/queue' || path === '/queue/status' || path.startsWith('/queue/status')) return 'queue'
   if (path === '/designs' || hash === '#collections') return 'designs'
   if (path === '/bridal' || hash === '#bridal') return 'bridal'
   if (path === '/events') return 'events'
@@ -95,7 +114,7 @@ function businessEntity() {
 
 export function buildStructuredData(pageKey) {
   const page = seoPages[pageKey] || seoPages.home
-  if (pageKey === 'admin') return []
+  if (pageKey === 'admin' || pageKey === 'queue' || pageKey === 'queue-manage') return []
 
   if (pageKey === 'home') {
     return [businessEntity()]
