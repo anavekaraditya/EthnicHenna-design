@@ -223,6 +223,7 @@ export function buildAdminView(session, entries, { now = Date.now() } = {}) {
     turnSmsSent: Boolean(entry.notification_turn_sent_at),
     smsError: entry.last_sms_error || null,
     smsErrorKind: entry.last_sms_kind || null,
+    smsRetryable: entry.last_sms_retryable !== false,
     smsProviderMessageId: entry.last_sms_provider_id || null,
     smsStatus: entry.last_sms_status || null,
     smsStatusKind: entry.last_sms_status_kind || null,
@@ -291,17 +292,24 @@ export function createMemoryQueue({
   const smsLog = []
 
   const dispatchSms = async (entry, kind, body) => {
+    if (!entry.sms_consent || !entry.phone) return { ok: true, skipped: true }
     const record = { kind, entryId: entry.id, phone: maskPhone(entry.phone), body }
     smsLog.push(record)
     if (!sendSms) return { ok: true, simulated: false }
     try {
       const result = await sendSms({ to: entry.phone, kind, body })
-      if (result?.ok === false) throw new Error(result.error || 'SMS could not be sent')
+      if (result?.ok === false) {
+        entry.last_sms_error = result.error || 'SMS could not be sent'
+        entry.last_sms_kind = kind
+        entry.last_sms_retryable = result.retryable !== false
+        return result
+      }
       return result || { ok: true }
     } catch (error) {
-      entry.last_sms_error = 'SMS could not be sent'
+      entry.last_sms_error = error.message || 'SMS delivery status is unknown. Check Telnyx message logs before retrying.'
       entry.last_sms_kind = kind
-      return { ok: false, error: error.message }
+      entry.last_sms_retryable = false
+      return { ok: false, error: entry.last_sms_error, retryable: false }
     }
   }
 
@@ -349,7 +357,7 @@ export function createMemoryQueue({
   async function syncNotifications(session) {
     const serving = servingEntry(entries, session.id)
     const waiting = waitingEntries(entries, session.id)
-    if (serving && !serving.notification_turn_sent_at) {
+    if (serving && !serving.notification_turn_sent_at && !(serving.last_sms_kind === 'turn' && serving.last_sms_retryable === false)) {
       const result = await dispatchSms(serving, 'turn', turnSms())
       if (result.ok && !result.simulated) {
         stamp(serving, { notification_turn_sent_at: new Date(now()).toISOString(), last_sms_error: null, last_sms_kind: null, last_sms_provider_id: result.providerMessageId || null })
@@ -358,7 +366,7 @@ export function createMemoryQueue({
       }
     }
     const nextGuest = serving ? waiting[0] : null
-    if (nextGuest && !nextGuest.notification_next_sent_at && !nextGuest.notification_turn_sent_at) {
+    if (nextGuest && !nextGuest.notification_next_sent_at && !nextGuest.notification_turn_sent_at && !(nextGuest.last_sms_kind === 'next' && nextGuest.last_sms_retryable === false)) {
       const result = await dispatchSms(nextGuest, 'next', nextSms())
       if (result.ok && !result.simulated) {
         stamp(nextGuest, { notification_next_sent_at: new Date(now()).toISOString(), last_sms_error: null, last_sms_kind: null, last_sms_provider_id: result.providerMessageId || null })
@@ -368,15 +376,20 @@ export function createMemoryQueue({
     }
   }
 
-  async function join({ name, phone, consent, bypassPause = false }) {
+  async function syncCurrentNotifications() {
+    const session = activeSession()
+    if (session) await syncNotifications(session)
+  }
+
+  async function join({ name, phone, consent, bypassPause = false, requirePhone = false, consentSource = 'artist_confirmed' }) {
     const session = ensureSession()
     if (!session.is_active) return { ok: false, error: 'closed', message: "The henna queue isn't open right now." }
     if (session.is_paused && !bypassPause) return { ok: false, error: 'paused', message: 'Queue temporarily paused. We\'re catching up with everyone already waiting. Please check again shortly.' }
     const cleanName = sanitizeName(name)
-    const rawPhone = String(phone || '').trim()
-    const normalized = normalizePhone(phone)
+    const normalized = consent || requirePhone ? normalizePhone(phone) : null
     if (!cleanName) return { ok: false, error: 'invalid_name', message: 'Please enter your name.' }
-    if (rawPhone && !normalized) return { ok: false, error: 'invalid_phone', message: 'Please enter a valid phone number.' }
+    if (requirePhone && !normalized) return { ok: false, error: 'invalid_phone', message: 'Enter a valid phone number to check in.' }
+    if (consent && !normalized) return { ok: false, error: 'invalid_phone', message: 'Enter a valid phone number after confirming the guest opted in to SMS.' }
 
     const existing = normalized ? findActiveByPhone(entries, session.id, normalized) : null
     if (existing) {
@@ -404,6 +417,8 @@ export function createMemoryQueue({
       join_sms_sent_at: null,
       last_sms_error: null,
       sms_consent: Boolean(consent && normalized),
+      sms_consent_at: consent && normalized ? new Date(now()).toISOString() : null,
+      sms_consent_source: consent && normalized ? consentSource : null,
       created_at: new Date(now()).toISOString(),
       updated_at: new Date(now()).toISOString(),
     }
@@ -433,7 +448,6 @@ export function createMemoryQueue({
         status: 'serving',
         called_at: nextGuest.called_at || new Date(now()).toISOString(),
         started_at: new Date(now()).toISOString(),
-        notification_turn_sent_at: null,
       })
     }
     await syncNotifications(session)
@@ -453,7 +467,6 @@ export function createMemoryQueue({
       status: 'serving',
       called_at: new Date(now()).toISOString(),
       started_at: new Date(now()).toISOString(),
-      notification_turn_sent_at: null,
     })
     await syncNotifications(session)
     return { ok: true, noop: false, admin: buildAdminView(session, entries, { now: now() }) }
@@ -473,7 +486,6 @@ export function createMemoryQueue({
         status: 'serving',
         called_at: nextGuest.called_at || new Date(now()).toISOString(),
         started_at: new Date(now()).toISOString(),
-        notification_turn_sent_at: null,
       })
     }
     await syncNotifications(session)
@@ -494,7 +506,6 @@ export function createMemoryQueue({
           status: 'serving',
           called_at: nextGuest.called_at || new Date(now()).toISOString(),
           started_at: new Date(now()).toISOString(),
-          notification_turn_sent_at: null,
         })
       }
     }
@@ -530,7 +541,6 @@ export function createMemoryQueue({
           status: 'serving',
           called_at: nextGuest.called_at || new Date(now()).toISOString(),
           started_at: new Date(now()).toISOString(),
-          notification_turn_sent_at: null,
         })
       }
     }
@@ -570,7 +580,6 @@ export function createMemoryQueue({
       order_index: entry.order_index,
       called_at: entry.called_at || new Date(now()).toISOString(),
       started_at: new Date(now()).toISOString(),
-      notification_turn_sent_at: null,
     })
     await syncNotifications(session)
     return { ok: true, admin: buildAdminView(session, entries, { now: now() }) }
@@ -579,7 +588,7 @@ export function createMemoryQueue({
   async function addWalkIn(payload) {
     return join({
       name: payload.name,
-      phone: payload.phone,
+      phone: payload.consent ? payload.phone : undefined,
       consent: Boolean(payload.consent),
       bypassPause: true,
       requireConsent: false,
@@ -592,6 +601,9 @@ export function createMemoryQueue({
     let kind = entry?.last_sms_kind
     if (!entry || !entry.sms_consent || !entry.last_sms_error || !['join', 'next', 'turn'].includes(kind)) {
       return { ok: false, error: 'not_retryable', message: 'There is no failed text to retry for this guest.' }
+    }
+    if (entry.last_sms_retryable === false) {
+      return { ok: false, error: 'sms_delivery_unknown', message: 'Telnyx did not confirm whether this text was delivered. Check Telnyx message logs before retrying.' }
     }
     let body
     if (kind === 'join') {
@@ -672,6 +684,7 @@ export function createMemoryQueue({
     serveNow,
     addWalkIn,
     retrySms,
+    syncCurrentNotifications,
     pause,
     resume,
     reset,

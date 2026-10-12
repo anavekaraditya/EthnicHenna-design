@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createMemoryQueue, normalizePhone } from '../../src/queue/engine.js'
 import { sendSms } from './sms.js'
+import { SMS_HELP_MESSAGE } from '../../src/queue/smsCopy.js'
 import { sendWebPush } from './webPush.js'
 
 const dataPath = join(dirname(fileURLToPath(import.meta.url)), '../../.queue-data.json')
@@ -113,11 +114,13 @@ export async function recoverGuest(phone) {
   return { ok: true, guest: current.guestByToken(entry.guest_token) }
 }
 
-export async function joinQueue({ name, phone, consent }) {
+export async function joinQueue({ name, phone, consent, requirePhone = false, consentSource = 'artist_confirmed' }) {
   const result = await getQueue().join({
     name,
     phone,
     consent,
+    requirePhone,
+    consentSource,
     bypassPause: false,
   })
   saved(result)
@@ -208,9 +211,24 @@ export async function processTelnyxWebhook(event) {
       persist(current)
       return { handled: true, action: 'opt_out' }
     }
+    if (['START', 'UNSTOP'].includes(keyword)) {
+      for (const entry of current.entries) {
+        if (entry.phone === phone && ['waiting', 'serving', 'skipped'].includes(entry.status)) {
+          entry.sms_consent = true
+          entry.sms_consent_at = new Date().toISOString()
+          entry.sms_consent_source = 'keyword_start'
+          entry.sms_opted_out_at = null
+        }
+      }
+      if (eventId) handledWebhookEvents.add(eventId)
+      persist(current)
+      await getQueue().syncCurrentNotifications()
+      await syncPushNotifications()
+      return { handled: true, action: 'opt_in' }
+    }
     if (keyword === 'HELP' || keyword === 'INFO') {
       const result = phone
-        ? await sendSms({ to: phone, kind: 'help', body: 'Ethnic Henna queue: texts are for queue updates. Reply STOP to opt out. For help, contact us through our website.' })
+        ? await sendSms({ to: phone, kind: 'help', body: SMS_HELP_MESSAGE })
         : { ok: false }
       if (eventId) handledWebhookEvents.add(eventId)
       return { handled: Boolean(result.ok), action: 'help' }
@@ -225,8 +243,16 @@ export async function processTelnyxWebhook(event) {
     const recipient = Array.isArray(payload?.to) ? payload.to.find((item) => item?.status) : null
     const status = String(recipient?.status || eventType.replace(/^message\./, '')).toLowerCase()
     if (entry && messageId) {
-      entry.last_sms_status = status === 'delivery_failed' || status === 'sending_failed' ? 'failed' : status === 'finalized' ? 'delivered' : status
+      const nextStatus = status === 'delivery_failed' || status === 'sending_failed' ? 'failed' : status === 'finalized' ? 'delivered' : status
+      if (entry.last_sms_status === 'delivered' || (entry.last_sms_status === 'failed' && nextStatus !== 'delivered')) {
+        if (eventId) handledWebhookEvents.add(eventId)
+        return { handled: true, action: 'delivery_updated' }
+      }
+      entry.last_sms_status = nextStatus
       entry.last_sms_status_kind = entry.last_sms_kind || null
+      entry.last_sms_error = entry.last_sms_status === 'failed' ? 'Telnyx reports this text was not delivered.' : null
+      entry.last_sms_retryable = entry.last_sms_status === 'failed' ? true : null
+      if (entry.last_sms_status !== 'failed') entry.last_sms_kind = null
       entry.updated_at = new Date().toISOString()
       persist(current)
     }

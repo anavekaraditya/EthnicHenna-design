@@ -12,6 +12,8 @@ export default wrap(async (req, res) => {
       name: body.name,
       phone: body.phone,
       consent: Boolean(body.consent),
+      requirePhone: true,
+      consentSource: 'guest_checkbox',
       siteUrl: siteUrl(req),
     })
     return json(res, result.ok ? 200 : 409, result)

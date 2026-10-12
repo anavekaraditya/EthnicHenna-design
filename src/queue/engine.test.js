@@ -33,8 +33,8 @@ test('three guests joining receive 1, 2, 3', async () => {
   assert.equal(c.guest.queueNumber, 3)
   assert.equal(c.guest.peopleAhead, 2)
   assert.equal(c.guest.liveLine.placeLabel, "You're 3rd in line")
-  assert.equal(c.guest.liveLine.rows[0].displayName, 'AS')
-  assert.equal(c.guest.liveLine.rows[1].displayName, 'MK')
+  assert.equal(c.guest.liveLine.rows[0].displayName, 'A••••• S•••••')
+  assert.equal(c.guest.liveLine.rows[1].displayName, 'M••• K•••••')
   assert.equal(c.guest.liveLine.rows[2].displayName, 'R••• P••••')
   assert.equal(c.guest.liveLine.rows[2].isYou, true)
   assert.equal(a.guest.status, 'waiting')
@@ -52,6 +52,43 @@ test('guest can join without a phone number or SMS consent', async () => {
   assert.equal(q.entries[0].phone, null)
   assert.equal(q.entries[0].sms_consent, false)
   assert.equal(q.smsLog.length, 0)
+})
+
+test('phone details are discarded and no SMS is sent without explicit consent', async () => {
+  const q = queue()
+  await q.join({ name: 'Maya Kapoor', phone: '9255551234', consent: false })
+  await q.startServing()
+
+  assert.equal(q.entries[0].phone, null)
+  assert.equal(q.entries[0].sms_consent, false)
+  assert.equal(q.smsLog.length, 0)
+})
+
+test('SMS consent requires a valid phone number', async () => {
+  const q = queue()
+  const result = await q.addWalkIn({ name: 'Maya Kapoor', consent: true })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'invalid_phone')
+  assert.equal(q.entries.length, 0)
+})
+
+test('unknown delivery status does not trigger an automatic or manual duplicate', async () => {
+  const q = createMemoryQueue({
+    randomId: () => 'guest-unknown',
+    randomToken: () => 'token-unknown',
+    sendSms: async () => ({
+      ok: false,
+      retryable: false,
+      error: 'SMS delivery status is unknown. Check Telnyx message logs before retrying.',
+    }),
+  })
+  await q.join({ name: 'Maya Kapoor', phone: '9255551234', consent: true })
+  await q.startServing()
+  await q.startServing()
+
+  assert.equal(q.smsLog.filter((item) => item.kind === 'turn').length, 1)
+  assert.equal((await q.retrySms('guest-unknown')).error, 'sms_delivery_unknown')
 })
 
 test('duplicate phone returns existing place instead of a second ticket', async () => {
@@ -110,7 +147,7 @@ test('skipping the next guest advances the following guest', async () => {
   assert.ok(q.smsLog.some((item) => item.kind === 'next' && item.entryId === q.entries.find((entry) => entry.name === 'RP').id))
 })
 
-test('serving a previously skipped guest sends a fresh turn text', async () => {
+test('serving a previously notified guest does not exceed the three-text visit limit', async () => {
   const q = queue()
   const a = await q.join({ name: 'AS', phone: '9255550001', consent: true })
   await q.join({ name: 'MK', phone: '9255550002', consent: true })
@@ -119,7 +156,7 @@ test('serving a previously skipped guest sends a fresh turn text', async () => {
   await q.skipGuest(aId)
   await q.restoreGuest(aId)
   await q.serveNow(aId)
-  assert.equal(q.smsLog.filter((item) => item.kind === 'turn' && item.entryId === aId).length, 2)
+  assert.equal(q.smsLog.filter((item) => item.kind === 'turn' && item.entryId === aId).length, 1)
 })
 
 test('invalid move directions do not move a guest', async () => {

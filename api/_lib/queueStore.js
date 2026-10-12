@@ -9,7 +9,7 @@ import {
   sanitizeName,
   waitingEntries,
 } from '../../src/queue/engine.js'
-import { joinSms, nextSms, statusUrlForToken, turnSms } from '../../src/queue/smsCopy.js'
+import { joinSms, nextSms, SMS_HELP_MESSAGE, statusUrlForToken, turnSms } from '../../src/queue/smsCopy.js'
 import { firebaseDb } from './firebase.js'
 import { sendSms } from './sms.js'
 import { sendWebPush } from './webPush.js'
@@ -92,6 +92,7 @@ async function notify(entry, kind, body, db) {
   if (result.ok && !result.simulated) {
     await updateEntry(db, entry.id, {
       ...fields,
+      last_sms_retryable: null,
       [providerIdField]: result.providerMessageId || null,
       [statusField]: result.providerStatus || 'accepted',
       last_sms_kind: null,
@@ -101,6 +102,7 @@ async function notify(entry, kind, body, db) {
     await updateEntry(db, entry.id, {
       last_sms_error: result.simulated ? 'SMS sending is disabled. This text was only previewed.' : (result.error || 'SMS could not be sent'),
       last_sms_kind: kind,
+      last_sms_retryable: result.retryable !== false,
     })
   }
   return result
@@ -153,6 +155,9 @@ async function updateMessageStatus(db, eventType, payload) {
       [statusField]: nextStatus,
       last_sms_status: nextStatus,
       last_sms_status_kind: kind,
+      last_sms_error: nextStatus === 'failed' ? 'Telnyx reports this text was not delivered.' : null,
+      last_sms_kind: nextStatus === 'failed' ? kind : null,
+      last_sms_retryable: nextStatus === 'failed' ? true : null,
     })
     return true
   }
@@ -196,6 +201,37 @@ async function optOutPhone(db, phone) {
   return changed
 }
 
+async function optInPhone(db, phone) {
+  if (!phone) return 0
+  const found = await db.collection('queue_entries').where('phone', '==', phone).get()
+  let batch = db.batch()
+  let changed = 0
+  let pending = 0
+  const commits = []
+  for (const doc of found.docs) {
+    if (!ACTIVE_PHONE.has(doc.data().status) || doc.data().sms_consent === true) continue
+    batch.update(doc.ref, {
+      sms_consent: true,
+      sms_consent_at: nowIso(),
+      sms_consent_source: 'keyword_start',
+      sms_opted_out_at: null,
+      last_sms_error: null,
+      last_sms_kind: null,
+      updated_at: nowIso(),
+    })
+    changed += 1
+    pending += 1
+    if (pending === 450) {
+      commits.push(batch.commit())
+      batch = db.batch()
+      pending = 0
+    }
+  }
+  if (pending) commits.push(batch.commit())
+  if (commits.length) await Promise.all(commits)
+  return changed
+}
+
 async function sendHelpReply(db, eventId, phone) {
   if (!phone) return { handled: false }
   const eventRef = eventId ? db.collection('queue_webhook_events').doc(eventId) : null
@@ -209,8 +245,7 @@ async function sendHelpReply(db, eventId, phone) {
     })
     if (!claimed) return { handled: false, duplicate: true }
   }
-  const helpText = 'Ethnic Henna queue: texts are for queue updates. Reply STOP to opt out. For help, contact us through our website.'
-  const sent = await sendSms({ to: phone, body: helpText, kind: 'help' })
+  const sent = await sendSms({ to: phone, body: SMS_HELP_MESSAGE, kind: 'help' })
   if (eventRef) {
     await eventRef.set({ state: sent.ok ? 'handled' : 'failed', lease_until: null, updated_at: nowIso() }, { merge: true })
   }
@@ -225,6 +260,11 @@ export async function processTelnyxWebhook(event, db) {
     if (['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'].includes(keyword)) {
       await optOutPhone(db, phone)
       return { handled: true, action: 'opt_out' }
+    }
+    if (['START', 'UNSTOP'].includes(keyword)) {
+      const updated = await optInPhone(db, phone)
+      if (updated) await syncNotifications(db)
+      return { handled: true, action: 'opt_in', updated }
     }
     if (keyword === 'HELP' || keyword === 'INFO') {
       const result = await sendHelpReply(db, eventId, phone)
@@ -256,8 +296,8 @@ async function syncNotifications(db, siteUrl) {
       await updateEntry(db, entry.id, { notification_next_push_sent_at: null })
     }
   }
-  if (serving && !serving.notification_turn_sent_at) await notify(serving, 'turn', turnSms(), db)
-  if (nextGuest && !nextGuest.notification_next_sent_at && !nextGuest.notification_turn_sent_at) {
+  if (serving && !serving.notification_turn_sent_at && !(serving.last_sms_kind === 'turn' && serving.last_sms_retryable === false)) await notify(serving, 'turn', turnSms(), db)
+  if (nextGuest && !nextGuest.notification_next_sent_at && !nextGuest.notification_turn_sent_at && !(nextGuest.last_sms_kind === 'next' && nextGuest.last_sms_retryable === false)) {
     await notify(nextGuest, 'next', nextSms(), db)
   }
   if (serving && !serving.notification_turn_push_sent_at) {
@@ -350,7 +390,7 @@ export async function recoverGuest(phone, siteUrl) {
   return { ok: true, guest: buildGuestView(entry, session, entries, { siteUrl }) }
 }
 
-export async function joinQueue({ name, phone, consent, siteUrl, bypassPause = false }) {
+export async function joinQueue({ name, phone, consent, siteUrl, bypassPause = false, requirePhone = false, consentSource = 'artist_confirmed' }) {
   const db = firebaseDb()
   const session = await loadSession(db)
   if (!session.is_active) return { ok: false, error: 'closed', message: "The henna queue isn't open right now." }
@@ -363,9 +403,11 @@ export async function joinQueue({ name, phone, consent, siteUrl, bypassPause = f
   }
   const cleanName = sanitizeName(name)
   const rawPhone = String(phone || '').trim()
-  const normalized = normalizePhone(phone)
+  const normalized = consent || requirePhone ? normalizePhone(phone) : null
   if (!cleanName) return { ok: false, error: 'invalid_name', message: 'Please enter your name.' }
-  if (rawPhone && !normalized) return { ok: false, error: 'invalid_phone', message: 'Please enter a valid phone number.' }
+  if (requirePhone && !normalized) return { ok: false, error: 'invalid_phone', message: 'Enter a valid phone number to check in.' }
+  if (rawPhone && !normalizePhone(phone)) return { ok: false, error: 'invalid_phone', message: 'Please enter a valid phone number.' }
+  if (consent && !normalized) return { ok: false, error: 'invalid_phone', message: 'Enter a valid phone number after confirming the guest opted in to SMS.' }
   const result = await db.runTransaction(async (tx) => {
     const metaRef = db.collection('queue_meta').doc('current')
     const sessionRef = db.collection('queue_sessions').doc(session.id)
@@ -417,6 +459,8 @@ export async function joinQueue({ name, phone, consent, siteUrl, bypassPause = f
       notification_turn_status: null,
       last_sms_error: null,
       sms_consent: Boolean(consent && normalized),
+      sms_consent_at: consent && normalized ? nowIso() : null,
+      sms_consent_source: consent && normalized ? consentSource : null,
       created_at: nowIso(),
       updated_at: nowIso(),
     }
@@ -472,7 +516,7 @@ export async function leaveQueue(guestToken, siteUrl) {
           .sort((a, b) => a.order_index - b.order_index)[0]
         if (next) tx.update(next.ref, {
           status: 'serving', called_at: next.called_at || nowIso(), started_at: nowIso(),
-          notification_turn_sent_at: null, updated_at: nowIso(),
+          updated_at: nowIso(),
         })
       }
     }
@@ -527,7 +571,6 @@ export async function runAdminAction(action, payload = {}, siteUrl) {
         status: 'serving',
         called_at: nextGuest.called_at || nowIso(),
         started_at: nowIso(),
-        notification_turn_sent_at: null,
         updated_at: nowIso(),
       })
       return { ok: true, noop: false }
@@ -550,7 +593,6 @@ export async function runAdminAction(action, payload = {}, siteUrl) {
           status: 'serving',
           called_at: nextGuest.called_at || nowIso(),
           started_at: nowIso(),
-          notification_turn_sent_at: null,
           updated_at: nowIso(),
         })
       }
@@ -569,7 +611,7 @@ export async function runAdminAction(action, payload = {}, siteUrl) {
         const next = entries.filter((entry) => entry.status === 'waiting').sort((a, b) => a.order_index - b.order_index)[0]
         if (next) tx.update(next.ref, {
           status: 'serving', called_at: next.called_at || nowIso(), started_at: nowIso(),
-          notification_turn_sent_at: null, updated_at: nowIso(),
+          updated_at: nowIso(),
         })
       }
       return 'ok'
@@ -601,7 +643,7 @@ export async function runAdminAction(action, payload = {}, siteUrl) {
         const next = entries.filter((entry) => entry.status === 'waiting').sort((a, b) => a.order_index - b.order_index)[0]
         if (next) tx.update(next.ref, {
           status: 'serving', called_at: next.called_at || nowIso(), started_at: nowIso(),
-          notification_turn_sent_at: null, updated_at: nowIso(),
+          updated_at: nowIso(),
         })
       }
       return true
@@ -640,7 +682,6 @@ export async function runAdminAction(action, payload = {}, siteUrl) {
         status: 'serving',
         called_at: target.called_at || nowIso(),
         started_at: nowIso(),
-        notification_turn_sent_at: null,
         updated_at: nowIso(),
       })
       return true
@@ -652,6 +693,9 @@ export async function runAdminAction(action, payload = {}, siteUrl) {
     let kind = entry?.last_sms_kind
     if (!entry || !entry.sms_consent || !entry.last_sms_error || !['join', 'next', 'turn'].includes(kind)) {
       return { ok: false, error: 'not_retryable', message: 'There is no failed text to retry for this guest.' }
+    }
+    if (entry.last_sms_retryable === false) {
+      return { ok: false, error: 'sms_delivery_unknown', message: 'Telnyx did not confirm whether this text was delivered. Check Telnyx message logs before retrying.' }
     }
     let body
     if (kind === 'join') {
@@ -682,7 +726,7 @@ export async function runAdminAction(action, payload = {}, siteUrl) {
   } else if (action === 'addGuest') {
     const result = await joinQueue({
       name: payload.name,
-      phone: payload.phone,
+      phone: payload.consent ? payload.phone : undefined,
       consent: Boolean(payload.consent),
       siteUrl,
       bypassPause: true,

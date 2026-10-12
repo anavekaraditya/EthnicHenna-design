@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { queueApi } from './queueApi.js'
 import { PushOptIn } from './PushOptIn.jsx'
 
+const GUEST_SMS_CONSENT_LABEL = 'I agree to receive up to 3 queue texts for this visit. Msg & data rates may apply. Reply STOP to opt out. SMS consent is optional.'
+
 function BrandMark() {
   return (
     <a className="queue-brand" href="/" aria-label="Ethnic Henna home">
@@ -25,8 +27,10 @@ function statusLabel(guest) {
 export function QueueGuestPage() {
   const [summary, setSummary] = useState(null)
   const [guest, setGuest] = useState(null)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [joining, setJoining] = useState(false)
-  const [form, setForm] = useState({ name: '' })
+  const [form, setForm] = useState({ name: '', phone: '' })
+  const [smsConsent, setSmsConsent] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [stale, setStale] = useState(false)
@@ -63,9 +67,13 @@ export function QueueGuestPage() {
   }
 
   useEffect(() => {
-    const token = queueApi.readToken()
-    loadSummary()
-    if (token) loadGuest(token)
+    let cancelled = false
+    async function initialize() {
+      const token = queueApi.readToken()
+      await Promise.all([loadSummary(), token ? loadGuest(token) : Promise.resolve()])
+      if (!cancelled) setInitialLoading(false)
+    }
+    initialize()
     const timer = setInterval(() => {
       loadSummary()
       const current = queueApi.readToken()
@@ -79,6 +87,7 @@ export function QueueGuestPage() {
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onFocus)
     return () => {
+      cancelled = true
       clearInterval(timer)
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onFocus)
@@ -92,9 +101,10 @@ export function QueueGuestPage() {
     setBusy(true)
     setError('')
     try {
-      const { data } = await queueApi.join(form)
+      const { data } = await queueApi.join({ ...form, consent: smsConsent })
       if (data.ok && data.guest) {
         setGuest(data.guest)
+        setJoining(false)
         queueApi.saveToken(data.guest.token)
         if (data.alreadyQueued) setError("You're already in the queue.")
       } else {
@@ -132,18 +142,41 @@ export function QueueGuestPage() {
   const closed = summary && summary.open === false
 
   return (
-    <div className="queue-page">
+    <div className="queue-page queue-guest-page">
       <BrandMark />
       <main className="queue-main">
         {stale && (
           <p className="queue-banner" role="status">We couldn’t update your queue position. Trying again…</p>
         )}
 
-        {guest && guest.status !== 'removed' ? (
+        {initialLoading ? (
+          <section className="queue-card queue-loading-card" aria-live="polite" aria-busy="true">
+            <span className="queue-kicker">Event check-in</span>
+            <div className="queue-skeleton queue-skeleton-title" />
+            <div className="queue-skeleton queue-skeleton-copy" />
+            <div className="queue-skeleton queue-skeleton-button" />
+            <span className="visually-hidden">Loading your queue…</span>
+          </section>
+        ) : guest?.status === 'removed' ? (
+          <section className="queue-card queue-state-card">
+            <span className="queue-state-icon is-muted" aria-hidden="true">—</span>
+            <p className="queue-kicker">Ticket closed</p>
+            <h1>Your place was removed</h1>
+            <p className="queue-lede">The artist removed this ticket from the queue. You can join again if check-in is still open.</p>
+            <button className="queue-primary" type="button" disabled={closed || paused} onClick={() => {
+              queueApi.clearToken()
+              setGuest(null)
+              setJoining(true)
+              setError('')
+            }}>{closed || paused ? 'Queue unavailable' : 'Join again'}</button>
+          </section>
+        ) : guest ? (
           <section className="queue-card queue-live-card" aria-live="polite">
             {guest.status === 'skipped' || guest.status === 'completed' ? (
               <>
-                <p className="queue-kicker">{headline}</p>
+                <span className={`queue-state-icon ${guest.status === 'completed' ? 'is-complete' : 'is-muted'}`} aria-hidden="true">{guest.status === 'completed' ? '✓' : '…'}</span>
+                <p className="queue-kicker">{guest.status === 'completed' ? 'Session complete' : 'Please check in'}</p>
+                <h1 className="queue-live-title">{headline}</h1>
                 <p className="queue-copy">{guest.status === 'skipped'
                   ? 'Your spot has been temporarily skipped. Please check with the henna artist when you’re ready.'
                   : 'Thank you — your henna is complete.'}</p>
@@ -158,6 +191,11 @@ export function QueueGuestPage() {
                 </div>
                 <h1 className="queue-live-title">{guest.status === 'serving' ? "It's your turn" : "You're checked in!"}</h1>
                 <p className="queue-live-place">{guest.status === 'serving' ? 'Please come to the henna station now.' : guest.status === 'next' ? 'Please stay nearby — you’re next.' : guest.liveLine?.placeLabel || headline}</p>
+                <div className="queue-ticket-summary">
+                  <span>Your ticket</span>
+                  <strong>#{guest.queueNumber}</strong>
+                  <small>{guest.status === 'serving' ? 'Please come to the station' : guest.waitLabel ? `Estimated wait · ${guest.waitLabel}` : guest.status === 'next' ? 'You’re up after the current guest' : 'You’re first in line'}</small>
+                </div>
                 {guest.liveLine?.rows?.length > 0 && (
                   <div className="queue-live-board">
                     <div className="queue-live-head">
@@ -169,7 +207,9 @@ export function QueueGuestPage() {
                       {guest.liveLine.rows.map((row) => (
                         <li className={row.isYou ? 'is-you' : ''} key={`${row.number}-${row.initials}`}>
                           <span className="queue-live-no">{row.number}.</span>
-                          <span className="queue-live-guest" aria-label={`Guest ${row.number}, name partially hidden`}>{row.displayName}</span>
+                          <span className="queue-live-guest" aria-label={row.isYou ? 'Your name' : `Guest ${row.number}, name partially hidden`}>
+                            {row.isYou ? guest.name : row.displayName}
+                          </span>
                           <span className="queue-live-mark">
                             {row.atStation ? (
                               <>
@@ -189,7 +229,7 @@ export function QueueGuestPage() {
                   </div>
                 )}
                 {guest.status !== 'serving' && (
-                  <p className="queue-copy queue-live-note">Feel free to enjoy the event. Turn on browser alerts to know when your turn is getting close.</p>
+                  <p className="queue-copy queue-live-note">Feel free to enjoy the event. Turn on browser alerts and we’ll let you know when your turn is close.</p>
                 )}
               </>
             )}
@@ -199,25 +239,36 @@ export function QueueGuestPage() {
             )}
           </section>
         ) : (
-          <section className="queue-card">
-            <h1>Skip the line, not your turn.</h1>
-            <p className="queue-lede">Join the henna queue, then turn on browser alerts to know when your turn is close.</p>
+          <section className="queue-card queue-join-card">
+            <p className="queue-kicker">Event check-in</p>
+            <h1>Join the henna queue</h1>
+            <p className="queue-lede">Check in with your name, then enjoy the event while you wait. We’ll keep your place updated here.</p>
             {closed ? (
               <p className="queue-banner" role="status">The henna queue isn’t open right now.</p>
             ) : paused ? (
               <p className="queue-banner" role="status">Queue temporarily paused. We’re catching up with everyone already waiting. Please check again shortly.</p>
             ) : (
-              <p className="queue-summary">{summary?.waitingCount ?? 0} {summary?.waitingCount === 1 ? 'person' : 'people'} waiting{summary?.waitLabel ? ` · About ${summary.waitLabel}` : ''}</p>
+              <div className="queue-summary-panel">
+                <div><strong>{summary?.waitingCount ?? 0}</strong><span>{summary?.waitingCount === 1 ? 'guest waiting' : 'guests waiting'}</span></div>
+                {summary?.waitLabel && <small>Estimated wait · {summary.waitLabel}</small>}
+              </div>
             )}
             {!joining && !closed && !paused && (
               <button className="queue-primary" type="button" onClick={() => setJoining(true)}>Join the Queue</button>
             )}
             {joining && !closed && !paused && (
               <form className="queue-form" onSubmit={handleJoin}>
-                <label htmlFor="queue-name">Name</label>
-                <input id="queue-name" name="name" autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
-                <p className="queue-copy queue-push-note">No phone number needed. Your ticket link is saved in this browser; keep it if you may switch devices.</p>
-                <button className="queue-primary" type="submit" disabled={busy}>{busy ? 'Joining queue…' : 'Join Queue'}</button>
+                <label htmlFor="queue-name">Your name</label>
+                <input id="queue-name" name="name" autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required autoFocus />
+                <label htmlFor="queue-phone">Phone number</label>
+                <input id="queue-phone" name="phone" type="tel" autoComplete="tel" inputMode="tel" placeholder="(555) 555-0123" pattern="[+0-9(). -]{8,24}" title="Enter a valid phone number" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} required />
+                <p className="queue-copy queue-push-note">Your number helps recover your ticket if you switch devices. We’ll only text you if you opt in below.</p>
+                <label className="queue-consent queue-guest-consent">
+                  <input type="checkbox" checked={smsConsent} onChange={(event) => setSmsConsent(event.target.checked)} />
+                  <span>{GUEST_SMS_CONSENT_LABEL}</span>
+                </label>
+                <button className="queue-primary" type="submit" disabled={busy}>{busy ? 'Checking you in…' : 'Check in'}</button>
+                <button className="queue-cancel-join" type="button" onClick={() => { setJoining(false); setError('') }}>Cancel</button>
               </form>
             )}
           </section>

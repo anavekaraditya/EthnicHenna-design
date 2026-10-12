@@ -5,7 +5,7 @@ export async function sendSms({ to, body, kind }) {
   if (!enabled) {
     const preview = String(body).replace(/https?:\/\/\S+/g, '[link]')
     console.info('[sms:dev]', { kind, to: maskPhone(to), preview: preview.slice(0, 90) })
-    return { ok: true, simulated: true, error: 'SMS sending is disabled' }
+    return { ok: true, simulated: true, retryable: true, error: 'SMS sending is disabled' }
   }
 
   if (!to || !body) return { ok: false, error: 'SMS needs a recipient and message.' }
@@ -48,7 +48,7 @@ export async function sendSms({ to, body, kind }) {
         errorTitle: err?.title || null,
         detail: String(err?.detail || '').slice(0, 240),
       })
-      return { ok: false, error: 'SMS could not be sent' }
+      return { ok: false, retryable: true, error: 'SMS could not be sent' }
     }
     console.info('[sms] Telnyx accepted', {
       kind,
@@ -58,12 +58,17 @@ export async function sendSms({ to, body, kind }) {
     })
     return {
       ok: true,
+      retryable: false,
       providerMessageId: payloadJson.data?.id || null,
       providerStatus: recipient.status || 'accepted',
     }
   } catch (error) {
     clearTimeout(timeout)
     console.error('[sms] send failed', { kind, to: maskPhone(to), reason: error.name === 'AbortError' ? 'timeout' : 'network' })
-    return { ok: false, error: error.name === 'AbortError' ? 'SMS provider timed out' : 'SMS could not be sent' }
+    return {
+      ok: false,
+      retryable: false,
+      error: 'SMS delivery status is unknown. Check Telnyx message logs before retrying.',
+    }
   }
 }

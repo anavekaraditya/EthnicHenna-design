@@ -24,8 +24,18 @@ export function QueueManagePage() {
   const [addOpen, setAddOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
   const [serveConfirm, setServeConfirm] = useState(null)
-  const [walkIn, setWalkIn] = useState({ name: '', phone: '', consent: true })
+  const [walkIn, setWalkIn] = useState({ name: '', phone: '', consent: false })
   const requestVersion = useRef(0)
+
+  function openAddGuest() {
+    setWalkIn({ name: '', phone: '', consent: false })
+    setAddOpen(true)
+  }
+
+  function closeAddGuest() {
+    setAddOpen(false)
+    setWalkIn({ name: '', phone: '', consent: false })
+  }
 
   async function refresh() {
     const version = ++requestVersion.current
@@ -141,17 +151,30 @@ export function QueueManagePage() {
   const stats = admin?.stats
 
   return (
-    <div className="queue-page queue-manage">
+    <div className="queue-page queue-manage queue-admin-page">
+      <div className="queue-admin-shell">
       <header className="queue-admin-header">
-        <div>
-          <p className="queue-kicker">Henna Queue</p>
-          <p className="queue-status-pill" data-state={admin?.session?.paused ? 'paused' : 'open'}>{admin?.session?.paused ? 'PAUSED' : 'OPEN'}</p>
-          <p>{stats?.waiting ?? 0} waiting{stats?.totalQueueLabel ? ` · ~${stats.totalQueueLabel} total queue` : ''}</p>
+        <div className="queue-admin-heading">
+          <a className="queue-brand" href="/" aria-label="Ethnic Henna home">
+            <img src="/brand/logo-mark.png" alt="" />
+            <span>Ethnic Henna</span>
+          </a>
+          <div className="queue-admin-title-row">
+            <div>
+              <p className="queue-kicker">Event management</p>
+              <h1>Henna Queue</h1>
+            </div>
+            <span className="queue-status-pill" data-state={admin?.session?.paused ? 'paused' : 'open'}>
+              <span className="queue-status-dot" aria-hidden="true" />
+              {admin?.session?.paused ? 'Paused' : 'Open'}
+            </span>
+          </div>
+          <p className="queue-admin-summary">{stats?.waiting ?? 0} guests waiting{stats?.totalQueueLabel ? ` · ~${stats.totalQueueLabel} total queue` : ''}</p>
         </div>
         <SettingsMenu open={menuOpen} onToggle={() => setMenuOpen((value) => !value)}>
           <button type="button" onClick={() => { setMenuOpen(false); act(admin?.session?.paused ? 'resume' : 'pause') }}>{admin?.session?.paused ? 'Resume Queue' : 'Pause New Entries'}</button>
           <button type="button" onClick={() => { setMenuOpen(false); setQrOpen(true) }}>Event QR Code</button>
-          <button type="button" onClick={() => { setMenuOpen(false); setAddOpen(true) }}>+ Add Guest</button>
+          <button type="button" onClick={() => { setMenuOpen(false); openAddGuest() }}>+ Add Guest</button>
           <button type="button" onClick={() => { setMenuOpen(false); setResetOpen(true) }}>Reset Queue</button>
           <button type="button" onClick={async () => { await queueApi.logout(); setAuth(false) }}>Log out</button>
         </SettingsMenu>
@@ -159,23 +182,25 @@ export function QueueManagePage() {
 
       {error && <p className="queue-error" role="alert">{error}</p>}
 
+      <div className="queue-dashboard-grid">
       <section className="queue-now-card">
         <p className="queue-kicker">Now serving</p>
         {serving ? (
           <>
+            <span className="queue-serving-indicator"><span className="queue-status-dot" aria-hidden="true" /> At the station</span>
             <p className="queue-now-initials">{serving.initials}</p>
-            <p>#{serving.displayNumber}</p>
+            <p className="queue-now-number">Ticket #{serving.displayNumber}</p>
             <p className="queue-copy">{serving.name} · {serving.phoneMasked}</p>
             <p className="queue-copy">Started {serving.startedAgoMinutes} min ago</p>
             {serving.smsStatus && <p className="queue-copy">Last text: {serving.smsStatus.replaceAll('_', ' ')}</p>}
             {serving.smsError && (
               <>
                 <p className="queue-sms-fail">{serving.smsError}</p>
-                {serving.smsErrorKind && <button className="queue-secondary" type="button" disabled={busy === 'retrySms'} onClick={() => act('retrySms', { id: serving.id })}>{busy === 'retrySms' ? 'Retrying text…' : 'Retry text'}</button>}
+                {serving.smsErrorKind && serving.smsRetryable !== false && <button className="queue-secondary" type="button" disabled={busy === 'retrySms'} onClick={() => act('retrySms', { id: serving.id })}>{busy === 'retrySms' ? 'Retrying text…' : 'Retry text'}</button>}
               </>
             )}
             <button className="queue-done" type="button" disabled={busy === 'complete'} onClick={() => act('complete', { servingId: serving.id, busyKey: 'complete' })}>
-              {busy === 'complete' ? 'Finishing…' : 'DONE'}
+              {busy === 'complete' ? 'Finishing…' : 'Complete session'}
             </button>
           </>
         ) : (
@@ -196,17 +221,17 @@ export function QueueManagePage() {
         )}
       </section>
 
-      <section>
+      <section className="queue-up-next">
         <div className="queue-section-head">
           <h2>Up next</h2>
-          <button className="queue-secondary" type="button" onClick={() => setAddOpen(true)}>+ Add Guest</button>
+          <button className="queue-secondary" type="button" onClick={openAddGuest}>+ Add Guest</button>
         </div>
         <ul className="queue-list">
           {(admin?.upNext || []).map((guest) => (
             <li key={guest.id}>
               <button className="queue-row" type="button" onClick={() => setOpenRow(openRow === guest.id ? null : guest.id)}>
-                <strong>#{guest.displayNumber} {guest.initials}</strong>
-                <span>{guest.waitLabel ? `~${guest.waitLabel}` : guest.status === 'next' ? 'Next' : ''}</span>
+                <span className="queue-row-identity"><span className="queue-ticket-number">#{guest.displayNumber}</span><strong className="queue-row-avatar">{guest.initials}</strong><span className="queue-row-name">{guest.name}</span></span>
+                <span className="queue-row-meta">{guest.status === 'next' ? <b>Next up</b> : null}{guest.waitLabel ? <span>~{guest.waitLabel}</span> : null}</span>
               </button>
               {openRow === guest.id && (
                 <div className="queue-row-actions">
@@ -215,7 +240,7 @@ export function QueueManagePage() {
                   {guest.smsError && (
                     <>
                       <p className="queue-sms-fail">{guest.smsError}</p>
-                      {guest.smsErrorKind && <button type="button" disabled={busy === 'retrySms'} onClick={() => act('retrySms', { id: guest.id })}>{busy === 'retrySms' ? 'Retrying text…' : 'Retry text'}</button>}
+                      {guest.smsErrorKind && guest.smsRetryable !== false && <button type="button" disabled={busy === 'retrySms'} onClick={() => act('retrySms', { id: guest.id })}>{busy === 'retrySms' ? 'Retrying text…' : 'Retry text'}</button>}
                     </>
                   )}
                   <button type="button" onClick={() => (serving ? setServeConfirm(guest) : act('serveNow', { id: guest.id }))}>Serve Now</button>
@@ -229,8 +254,9 @@ export function QueueManagePage() {
           ))}
         </ul>
       </section>
+      </div>
 
-      <section>
+      <section className="queue-skipped-section">
         <button className="queue-collapse" type="button" onClick={() => setSkippedOpen((value) => !value)}>
           Skipped ({stats?.skipped ?? 0})
         </button>
@@ -250,11 +276,11 @@ export function QueueManagePage() {
         )}
       </section>
 
-      <section className="queue-stats">
-        <p>Served today: {stats?.served ?? 0}</p>
-        <p>Waiting: {stats?.waiting ?? 0}</p>
-        <p>Skipped: {stats?.skipped ?? 0}</p>
-        <p>Average service time: {stats?.averageServiceMinutes ?? 10} min</p>
+      <section className="queue-stats" aria-label="Queue statistics">
+        <div><span>Served today</span><strong>{stats?.served ?? 0}</strong></div>
+        <div><span>Waiting</span><strong>{stats?.waiting ?? 0}</strong></div>
+        <div><span>Skipped</span><strong>{stats?.skipped ?? 0}</strong></div>
+        <div><span>Avg. service time</span><strong>{stats?.averageServiceMinutes ?? 10}<small> min</small></strong></div>
       </section>
 
       {qrOpen && (
@@ -273,19 +299,22 @@ export function QueueManagePage() {
         <div className="queue-dialog-backdrop" role="dialog" aria-modal="true">
           <form className="queue-dialog queue-form" onSubmit={async (event) => {
             event.preventDefault()
-            if (await act('addGuest', { ...walkIn, busyKey: 'addGuest' })) setAddOpen(false)
+            if (await act('addGuest', { ...walkIn, busyKey: 'addGuest' })) {
+              closeAddGuest()
+            }
           }}>
             <h2>Add guest</h2>
             <label htmlFor="walk-in-name">Name</label>
             <input id="walk-in-name" value={walkIn.name} onChange={(event) => setWalkIn({ ...walkIn, name: event.target.value })} required />
-            <label htmlFor="walk-in-phone">Phone number</label>
-            <input id="walk-in-phone" type="tel" value={walkIn.phone} onChange={(event) => setWalkIn({ ...walkIn, phone: event.target.value })} required />
+            <label htmlFor="walk-in-phone">Phone number (optional)</label>
+            <input id="walk-in-phone" type="tel" autoComplete="tel" value={walkIn.phone} onChange={(event) => setWalkIn({ ...walkIn, phone: event.target.value })} />
+            <p className="queue-copy">Only enter a number if the guest chooses SMS updates.</p>
             <label className="queue-consent">
               <input type="checkbox" checked={walkIn.consent} onChange={(event) => setWalkIn({ ...walkIn, consent: event.target.checked })} />
               <span>{SMS_CONSENT_LABEL}</span>
             </label>
             <div className="queue-dialog-actions">
-              <button className="queue-secondary" type="button" onClick={() => setAddOpen(false)}>Cancel</button>
+              <button className="queue-secondary" type="button" onClick={closeAddGuest}>Cancel</button>
               <button className="queue-primary" type="submit" disabled={busy === 'addGuest'}>{busy === 'addGuest' ? 'Adding…' : 'Add to queue'}</button>
             </div>
           </form>
@@ -317,6 +346,7 @@ export function QueueManagePage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }
