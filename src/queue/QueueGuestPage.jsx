@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { queueApi } from './queueApi.js'
-import { PushOptIn } from './PushOptIn.jsx'
 
 const GUEST_SMS_CONSENT_LABEL = 'I agree to receive up to 3 queue texts for this visit. Msg & data rates may apply. Reply STOP to opt out. SMS consent is optional.'
 
@@ -228,12 +227,8 @@ export function QueueGuestPage() {
                     </ol>
                   </div>
                 )}
-                {guest.status !== 'serving' && (
-                  <p className="queue-copy queue-live-note">Feel free to enjoy the event. Turn on browser alerts and we’ll let you know when your turn is close.</p>
-                )}
               </>
             )}
-            {['waiting', 'next', 'serving'].includes(guest.status) && <PushOptIn token={guest.token} />}
             {guest.status !== 'completed' && guest.status !== 'removed' && (
               <button className="queue-text-button" type="button" onClick={() => setLeaveOpen(true)}>Leave Queue</button>
             )}
