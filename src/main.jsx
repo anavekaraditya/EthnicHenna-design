@@ -81,7 +81,22 @@ function PortfolioImage({ design, loading = 'lazy' }) {
   const filename = design.src.split('/').pop().replace(/\.jpg$/i, '')
   const optimizedSrcSet = `/portfolio/optimized/${filename}-800.webp 800w, /portfolio/optimized/${filename}-1400.webp 1400w`
   const [width, height] = portfolioDimensions[`${filename}.jpg`] || [1400, 1750]
-  return <picture className="portfolio-image-picture"><source type="image/webp" srcSet={optimizedSrcSet} sizes="(max-width: 720px) 50vw, 25vw" /><img src={design.src} alt={design.alt} loading={loading} decoding="async" width={width} height={height} /></picture>
+  const imgRef = useRef(null)
+  const [loaded, setLoaded] = useState(false)
+  useEffect(() => { if (imgRef.current?.complete) setLoaded(true) }, [])
+  return <picture className="portfolio-image-picture"><source type="image/webp" srcSet={optimizedSrcSet} sizes="(max-width: 720px) 50vw, 25vw" /><img ref={imgRef} className={loaded ? 'is-loaded' : ''} onLoad={() => setLoaded(true)} src={design.src} alt={design.alt} loading={loading} decoding="async" width={width} height={height} /></picture>
+}
+
+// Adds .is-visible to [data-reveal] elements as they scroll into view.
+function useScrollReveal() {
+  useEffect(() => {
+    const targets = document.querySelectorAll('[data-reveal]')
+    if (!('IntersectionObserver' in window)) { targets.forEach((el) => el.classList.add('is-visible')); return undefined }
+    const observer = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add('is-visible'); observer.unobserve(entry.target) } }), { rootMargin: '0px 0px -8% 0px', threshold: 0.08 })
+    targets.forEach((el) => observer.observe(el))
+    document.documentElement.classList.add('reveal-ready')
+    return () => observer.disconnect()
+  }, [])
 }
 
 // Each AR asset is authored for a known body surface. Add future designs here
@@ -230,13 +245,77 @@ function BrandHomeLink({ className = 'wordmark' }) {
 }
 
 function PublicNav({ current }) {
-  const links = [['work', 'Work', '/work'], ['pricing', 'Design by Pricing', '/designs'], ['bridal', 'Bridal', '/bridal'], ['events', 'Events', '/events']]
+  const links = [['work', 'Work', 'Work', '/work'], ['pricing', 'Design by Pricing', 'Pricing', '/designs'], ['bridal', 'Bridal', 'Bridal', '/bridal'], ['events', 'Events', 'Events', '/events']]
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
   return (
-    <header className="landing-header">
-      <BrandHomeLink />
-      <nav className="landing-nav" aria-label="Main navigation">{links.map(([key, label, href]) => <a className={current === key ? 'is-current' : ''} href={href} key={key}>{label}</a>)}</nav>
-      <a className="header-whatsapp" href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer"><WhatsAppIcon /><span>WhatsApp</span></a>
+    <header className={`pill-nav${scrolled ? ' is-scrolled' : ''}`}>
+      <a className="pill pill-logo" href="/" aria-label="Ethnic Henna home"><img className="logo-mark" src="/brand/logo-mark.png" alt="" width="457" height="640" /><span className="logo-text">Ethnic Henna</span></a>
+      <nav className="pill pill-links" aria-label="Main navigation">{links.map(([key, label, short, href]) => <a className={current === key ? 'is-current' : ''} href={href} key={key}><span className="label-full">{label}</span><span className="label-short">{short}</span></a>)}</nav>
+      <a className="pill pill-cta" href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer" aria-label="Message Deepali on WhatsApp"><WhatsAppIcon /><span>Book on WhatsApp</span></a>
     </header>
+  )
+}
+
+const heroSlides = [
+  { key: 'home', image: 'home-hero', line1: 'Henna for brides', line2: 'and celebrations.', href: '/work', cta: 'View work', label: 'Featured', alt: 'Crossed hands with detailed henna against a mustard outfit' },
+  { key: 'bridal', image: 'bridal-hero', line1: 'Bridal henna', line2: 'for your wedding.', href: '/bridal', cta: 'Bridal pricing', label: 'Bridal', alt: 'Bridal henna on hands styled with colorful chooda against a ceremony backdrop' },
+  { key: 'designs', image: 'designs-hero', line1: 'Designs', line2: 'by price.', href: '/designs', cta: 'Browse designs', label: 'Designs', alt: 'Paired henna hands reaching into warm candlelight beside flowers and carved wood' },
+  { key: 'events', image: 'events-hero', line1: 'Henna for', line2: 'your guests.', href: '/events', cta: 'Plan an event', label: 'Events', alt: 'Paired henna hands resting on red and gold silk for a celebration' },
+]
+const heroSlideMs = 6500
+
+function HomeHero() {
+  const [index, setIndex] = useState(0)
+  const [noteOpen, setNoteOpen] = useState(true)
+  const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  useEffect(() => {
+    if (reduceMotion) return undefined
+    const timer = setTimeout(() => setIndex((current) => (current + 1) % heroSlides.length), heroSlideMs)
+    return () => clearTimeout(timer)
+  }, [index, reduceMotion])
+  const slide = heroSlides[index]
+  return (
+    <section className="hx">
+      <div className="hx-stage" aria-hidden="true">
+        {heroSlides.map((item, i) => (
+          <picture className={`hx-slide${i === index ? ' is-active' : ''}`} key={item.key}>
+            <source media="(max-width: 720px)" type="image/webp" srcSet={`/optimized/${item.image}-mobile.webp`} />
+            <source media="(max-width: 720px)" srcSet={`/${item.image}-mobile.jpg`} />
+            <source type="image/webp" srcSet={`/optimized/${item.image}-desktop.webp`} />
+            <img src={`/${item.image}-desktop.jpg`} alt="" width="1024" height="576" fetchpriority={i === 0 ? 'high' : 'auto'} decoding="async" />
+          </picture>
+        ))}
+      </div>
+      <div className="hx-scrim" aria-hidden="true" />
+      <h1 className="sr-only">Henna for brides and celebrations.</h1>
+      <div className="hx-copy" key={slide.key} aria-live="polite">
+        <p className="hx-title" aria-hidden="true">{slide.line1}<br /><em>{slide.line2}</em></p>
+        <a className="hx-link" href={slide.href}>{slide.cta} <ArrowIcon /></a>
+        <span className="sr-only">{slide.alt}</span>
+      </div>
+      <div className="hx-bar">
+        <div className="hx-thumbs" role="group" aria-label="Featured work">
+          {heroSlides.map((item, i) => (
+            <button type="button" className={`hx-thumb${i === index ? ' is-active' : ''}`} key={item.key} onClick={() => setIndex(i)} aria-label={`Show ${item.label}`} aria-current={i === index}>
+              <img src={`/optimized/${item.image}-mobile.webp`} alt="" loading="lazy" decoding="async" />
+              <span className="hx-thumb-label">{item.label}</span>
+              {i === index && !reduceMotion && <span className="hx-progress" style={{ animationDuration: `${heroSlideMs}ms` }} />}
+            </button>
+          ))}
+        </div>
+        {noteOpen && <div className="hx-note"><span className="hx-dot" /><span>Based in San Ramon <em>· serving the Bay Area</em></span><button type="button" onClick={() => setNoteOpen(false)} aria-label="Dismiss notice">×</button></div>}
+        <a className="hx-card" href="/events">
+          <img src="/optimized/events-hero-mobile.webp" alt="" loading="lazy" decoding="async" />
+          <span><small>Hosting a gathering?</small><strong>Henna for your guests</strong><em>Hourly, by inquiry</em></span>
+        </a>
+      </div>
+    </section>
   )
 }
 
@@ -289,7 +368,7 @@ function CollectionCard({ collection, onSelect }) {
     <button className="collection-card" onClick={() => onSelect(collection.price)} aria-label={`View ${collection.label} collection`}>
       <span className="collection-image-wrap">{collection.designs[0] ? <img src={collection.designs[0].src} alt="" loading="lazy" /> : <span className="collection-image-empty">Add your first design</span>}</span>
       <span className="collection-card-body">
-        <span className="collection-card-top"><span className="eyebrow">Collection</span><span className="collection-count">{collection.designs.length} designs</span></span>
+        <span className="collection-card-top"><span className="collection-count">{collection.designs.length} designs</span></span>
         <span className="collection-price">{collection.label}</span>
         <span className="collection-description">{collection.description}</span>
         <span className="collection-link">Explore collection <ArrowIcon /></span>
@@ -332,7 +411,7 @@ function Lightbox({ selected, onClose, onPrevious, onNext }) {
       <div className="lightbox" role="dialog" aria-modal="true" aria-label={`Design ${selected.design.id}`} ref={dialogRef} onTouchStart={(event) => { touchStart.current = event.changedTouches[0].clientX }} onTouchEnd={(event) => { const start = touchStart.current; const end = event.changedTouches[0].clientX; if (start && Math.abs(start - end) > 45) start > end ? onNext() : onPrevious(); touchStart.current = null }}>
         <div className="lightbox-toolbar"><span className="lightbox-position">{selected.index + 1} / {selected.collection.designs.length}</span><button className="icon-button" onClick={onClose} ref={closeRef} aria-label="Close design preview"><CloseIcon /></button></div>
         <div className="lightbox-image-frame"><img src={selected.design.src} alt={selected.design.alt} /></div>
-        <div className="lightbox-details"><div><span className="eyebrow">Design {selected.design.id}</span><h2>{selected.collection.label} collection</h2></div><div className="lightbox-actions">{arDesignAssets[selected.design.id] && <button className="whatsapp-button lightbox-ar-button" type="button" onClick={() => setShowAr(true)}>Try on your hand</button>}<a className="whatsapp-button" href={whatsappHref} target="_blank" rel="noreferrer"><WhatsAppIcon /> Send it to artist</a></div></div>
+        <div className="lightbox-details"><div><h2>Design {selected.design.id} · {selected.collection.label}</h2></div><div className="lightbox-actions">{arDesignAssets[selected.design.id] && <button className="whatsapp-button lightbox-ar-button" type="button" onClick={() => setShowAr(true)}>Try on your hand</button>}<a className="whatsapp-button" href={whatsappHref} target="_blank" rel="noreferrer"><WhatsAppIcon /> Send it to artist</a></div></div>
         <div className="lightbox-nav"><button className="nav-button" onClick={onPrevious} aria-label="Previous design"><ArrowIcon direction="left" /> Previous</button><button className="nav-button" onClick={onNext} aria-label="Next design">Next <ArrowIcon /></button></div>
       </div>
       {showAr && <ArPreview design={selected.design} onClose={() => setShowAr(false)} />}
@@ -553,7 +632,7 @@ function ArPreview({ design, onClose }) {
   return (
     <div className="ar-preview-backdrop" role="presentation">
       <div className="ar-preview" role="dialog" aria-modal="true" aria-label={`Try design ${design.id} on your hand`}>
-        <div className="ar-preview-header"><div><p className="eyebrow">Live hand preview</p><h2>Try design {design.id}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close hand preview"><CloseIcon /></button></div>
+        <div className="ar-preview-header"><div><h2>Try design {design.id}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close hand preview"><CloseIcon /></button></div>
         <div className="ar-camera-stage">
           <video ref={videoRef} className={cameraFacing === 'user' ? 'is-mirrored' : ''} autoPlay muted playsInline aria-label={`${cameraFacing === 'user' ? 'Front' : 'Back'} camera preview`} />
           <div className={`ar-camera-placeholder${cameraReady ? ' is-ready' : ''}`} aria-hidden="true">{cameraError ? 'Camera unavailable' : cameraState === 'idle' ? 'Start the camera to try this design' : 'Starting camera…'}</div>
@@ -585,7 +664,7 @@ function AdminLogin({ onLogin }) {
       <div className="admin-login-card">
         <a className="admin-back-link" href="/">← Back to public menu</a>
         <img className="admin-login-logo" src="/brand/logo-mark.png" alt="" />
-        <p className="eyebrow">Artist access</p>
+        
         <h1>Welcome back,<br /><em>Deepali.</em></h1>
         <p className="admin-intro">Sign in to update your collections and keep your design menu fresh.</p>
         <form onSubmit={submit} className="admin-login-form">
@@ -779,21 +858,61 @@ function AdminDashboard({ onLogout }) {
         <button className="admin-logout" onClick={() => { sessionStorage.removeItem(adminSessionKey); onLogout() }}>Log out</button>
       </header>
       <section className="admin-content">
-        <div className="admin-title-row"><div><p className="eyebrow">Artist dashboard</p><h1>Make it yours,<br /><em>one design at a time.</em></h1></div><span className="admin-status">Saved privately</span></div>
+        <div className="admin-title-row"><div><h1>Make it yours,<br /><em>one design at a time.</em></h1></div><span className="admin-status">Saved privately</span></div>
         <p className="admin-intro admin-wide-intro">Choose a collection to add pictures or change their order. Updates are saved on this device.</p>
         {notice && <p className="admin-notice" role="status">{notice}</p>}
         <div className="admin-toolbar"><div className="admin-category-tabs" role="tablist" aria-label="Collections">{collections.map((collection) => <button key={collection.price} className={collection.price === activeCollection?.price ? 'is-active' : ''} onClick={() => setSelectedPrice(collection.price)} role="tab" aria-selected={collection.price === activeCollection?.price}>{collection.label}<small>{collection.designs.length} designs</small></button>)}<button className="admin-new-category-tab" onClick={() => setShowAddCategory(true)} aria-label="Create a new category">＋<small>New category</small></button></div><div className="admin-toolbar-actions"><label className="admin-upload-button">+ Add pictures<input type="file" accept="image/*" multiple onChange={addImages} disabled={!activeCollection} /></label></div></div>
-        {activeCollection && <section className="admin-collection-panel" aria-labelledby="admin-collection-title"><div className="admin-panel-heading"><div><p className="eyebrow">Editing collection</p><h2 id="admin-collection-title">{activeCollection.label}</h2></div><div className="admin-panel-meta"><span>{activeCollection.designs.length} designs</span><button className="admin-remove-category" onClick={() => setCategoryToDelete(activeCollection)} disabled={collections.length === 1}>Remove category</button></div></div>{activeCollection.designs.length ? <div className="admin-design-list" aria-label="Drag pictures to change their order">{activeCollection.designs.map((design, index) => <article className={`admin-design-row ${draggedIndex === index ? 'is-dragging' : ''}`} key={`${design.id}-${index}`} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; setDraggedIndex(index) }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); reorderDesign(draggedIndex, index) }} onDragEnd={() => setDraggedIndex(null)} onTouchStart={() => beginTouchDrag(index)} onTouchMove={updateTouchDrag} onTouchEnd={finishTouchDrag}><button className="admin-design-thumb" onClick={() => setEditingDesignIndex(index)} aria-label={`Open options for ${design.id}`}><img src={design.src} alt="" /><span>Tap to edit</span></button><div className="admin-design-info"><strong>{design.id}</strong><span>Position {index + 1} · Drag to reorder</span></div><div className="admin-row-actions"><button onClick={() => moveDesign(index, -1)} disabled={index === 0} aria-label={`Move ${design.id} up`}>↑</button><button onClick={() => moveDesign(index, 1)} disabled={index === activeCollection.designs.length - 1} aria-label={`Move ${design.id} down`}>↓</button><button className="admin-remove" onClick={() => setEditingDesignIndex(index)} aria-label={`Open options for ${design.id}`}>×</button></div></article>)}</div> : <div className="admin-empty"><p>No designs here yet.</p><label className="admin-primary-button">Choose pictures<input type="file" accept="image/*" multiple onChange={addImages} /></label></div>}</section>}
-        <section className="admin-backups"><div><p className="eyebrow">Keep a copy</p><h2>Backup your menu</h2><p>Download your changes before switching devices.</p></div><div className="admin-backup-actions"><button className="admin-secondary-button" onClick={exportBackup}>Download backup</button><button className="admin-text-button" onClick={() => importRef.current?.click()}>Restore backup</button><input ref={importRef} type="file" accept="application/json" onChange={importBackup} /></div></section>
+        {activeCollection && <section className="admin-collection-panel" aria-labelledby="admin-collection-title"><div className="admin-panel-heading"><div><h2 id="admin-collection-title">{activeCollection.label}</h2></div><div className="admin-panel-meta"><span>{activeCollection.designs.length} designs</span><button className="admin-remove-category" onClick={() => setCategoryToDelete(activeCollection)} disabled={collections.length === 1}>Remove category</button></div></div>{activeCollection.designs.length ? <div className="admin-design-list" aria-label="Drag pictures to change their order">{activeCollection.designs.map((design, index) => <article className={`admin-design-row ${draggedIndex === index ? 'is-dragging' : ''}`} key={`${design.id}-${index}`} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; setDraggedIndex(index) }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); reorderDesign(draggedIndex, index) }} onDragEnd={() => setDraggedIndex(null)} onTouchStart={() => beginTouchDrag(index)} onTouchMove={updateTouchDrag} onTouchEnd={finishTouchDrag}><button className="admin-design-thumb" onClick={() => setEditingDesignIndex(index)} aria-label={`Open options for ${design.id}`}><img src={design.src} alt="" /><span>Tap to edit</span></button><div className="admin-design-info"><strong>{design.id}</strong><span>Position {index + 1} · Drag to reorder</span></div><div className="admin-row-actions"><button onClick={() => moveDesign(index, -1)} disabled={index === 0} aria-label={`Move ${design.id} up`}>↑</button><button onClick={() => moveDesign(index, 1)} disabled={index === activeCollection.designs.length - 1} aria-label={`Move ${design.id} down`}>↓</button><button className="admin-remove" onClick={() => setEditingDesignIndex(index)} aria-label={`Open options for ${design.id}`}>×</button></div></article>)}</div> : <div className="admin-empty"><p>No designs here yet.</p><label className="admin-primary-button">Choose pictures<input type="file" accept="image/*" multiple onChange={addImages} /></label></div>}</section>}
+        <section className="admin-backups"><div><h2>Backup your menu</h2><p>Download your changes before switching devices.</p></div><div className="admin-backup-actions"><button className="admin-secondary-button" onClick={exportBackup}>Download backup</button><button className="admin-text-button" onClick={() => importRef.current?.click()}>Restore backup</button><input ref={importRef} type="file" accept="application/json" onChange={importBackup} /></div></section>
       </section>
-      {showAddCategory && <div className="admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAddCategory(false) }}><div className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="add-category-title"><button className="admin-dialog-close" onClick={() => setShowAddCategory(false)} aria-label="Close new category form">×</button><p className="eyebrow">Grow your menu</p><h2 id="add-category-title">Create a new category</h2><form className="admin-category-dialog-form" onSubmit={addCategory}><label>Price<input type="number" min="1" step="1" placeholder="30" value={categoryForm.price} onChange={(event) => setCategoryForm({ ...categoryForm, price: event.target.value })} required /></label><label>Description <span>(optional)</span><input type="text" placeholder="Detailed designs for special occasions" value={categoryForm.description} onChange={(event) => setCategoryForm({ ...categoryForm, description: event.target.value })} /></label><div className="admin-dialog-actions"><button className="admin-secondary-button" type="button" onClick={() => setShowAddCategory(false)}>Cancel</button><button className="admin-primary-button" type="submit">Create category <ArrowIcon /></button></div></form></div></div>}
-      {categoryToDelete && <div className="admin-dialog-backdrop" role="presentation"><div className="admin-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-category-title" aria-describedby="delete-category-description"><p className="eyebrow">Please confirm</p><h2 id="delete-category-title">Remove {categoryToDelete.label}?</h2><p id="delete-category-description">This will remove the category and all {categoryToDelete.designs.length} design{categoryToDelete.designs.length === 1 ? '' : 's'} inside it. This action cannot be undone unless you restore a backup.</p><div className="admin-dialog-actions"><button className="admin-secondary-button" onClick={() => setCategoryToDelete(null)}>Keep category</button><button className="admin-danger-button" onClick={removeCategory}>Remove category</button></div></div></div>}
-      {editingDesign && <div className="admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingDesignIndex(null) }}><div className="admin-image-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-image-title"><button className="admin-dialog-close" onClick={() => setEditingDesignIndex(null)} aria-label="Close image options">×</button><img src={editingDesign.src} alt={editingDesign.alt} /><div className="admin-image-dialog-body"><p className="eyebrow">Design {editingDesign.id}</p><h2 id="edit-image-title">Picture options</h2><label className="admin-option-row"><span>Move to another category</span><select value={activeCollection.price} onChange={(event) => moveDesignToCategory(Number(event.target.value))}>{collections.map((collection) => <option key={collection.price} value={collection.price}>{collection.label}</option>)}</select></label><label className="admin-option-button">Replace image<input type="file" accept="image/*" onChange={replaceDesign} /></label><button className="admin-danger-button admin-full-button" onClick={() => { removeDesign(editingDesignIndex); setEditingDesignIndex(null) }}>Remove image</button></div></div></div>}
+      {showAddCategory && <div className="admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAddCategory(false) }}><div className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="add-category-title"><button className="admin-dialog-close" onClick={() => setShowAddCategory(false)} aria-label="Close new category form">×</button><h2 id="add-category-title">Create a new category</h2><form className="admin-category-dialog-form" onSubmit={addCategory}><label>Price<input type="number" min="1" step="1" placeholder="30" value={categoryForm.price} onChange={(event) => setCategoryForm({ ...categoryForm, price: event.target.value })} required /></label><label>Description <span>(optional)</span><input type="text" placeholder="Detailed designs for special occasions" value={categoryForm.description} onChange={(event) => setCategoryForm({ ...categoryForm, description: event.target.value })} /></label><div className="admin-dialog-actions"><button className="admin-secondary-button" type="button" onClick={() => setShowAddCategory(false)}>Cancel</button><button className="admin-primary-button" type="submit">Create category <ArrowIcon /></button></div></form></div></div>}
+      {categoryToDelete && <div className="admin-dialog-backdrop" role="presentation"><div className="admin-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-category-title" aria-describedby="delete-category-description"><h2 id="delete-category-title">Remove {categoryToDelete.label}?</h2><p id="delete-category-description">This will remove the category and all {categoryToDelete.designs.length} design{categoryToDelete.designs.length === 1 ? '' : 's'} inside it. This action cannot be undone unless you restore a backup.</p><div className="admin-dialog-actions"><button className="admin-secondary-button" onClick={() => setCategoryToDelete(null)}>Keep category</button><button className="admin-danger-button" onClick={removeCategory}>Remove category</button></div></div></div>}
+      {editingDesign && <div className="admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingDesignIndex(null) }}><div className="admin-image-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-image-title"><button className="admin-dialog-close" onClick={() => setEditingDesignIndex(null)} aria-label="Close image options">×</button><img src={editingDesign.src} alt={editingDesign.alt} /><div className="admin-image-dialog-body"><h2 id="edit-image-title">Picture options</h2><label className="admin-option-row"><span>Move to another category</span><select value={activeCollection.price} onChange={(event) => moveDesignToCategory(Number(event.target.value))}>{collections.map((collection) => <option key={collection.price} value={collection.price}>{collection.label}</option>)}</select></label><label className="admin-option-button">Replace image<input type="file" accept="image/*" onChange={replaceDesign} /></label><button className="admin-danger-button admin-full-button" onClick={() => { removeDesign(editingDesignIndex); setEditingDesignIndex(null) }}>Remove image</button></div></div></div>}
     </main>
   )
 }
 
+const googleReviewsUrl = 'https://share.google/9UrwgiXpE7N9pp1iW'
+// Verbatim Google reviews (5 stars each), chosen to cover bridal, detail, professionalism and events.
+const testimonials = [
+  { name: 'Lois Chang', note: 'Bridal client', quote: 'Deepali is just amazing! She did my wedding 11 years ago and still has the best henna designs! You will not be disappointed.' },
+  { name: 'Ruchira Bajaj', note: 'Special occasion', quote: 'Deepali is so talented! I loved how intricate and delicate her mehndi designs are, right down to the tiniest details. I’d happily recommend Ethnic Henna to anyone looking for beautiful mehndi for a special occasion.' },
+  { name: 'Niroop Srivatsa', note: 'Custom design', quote: 'Deepali is so talented, her designs are the best. She listens carefully to what the client is looking for and delivers with precision. I strongly recommend that you select Deepali for Mehndi services. You will not be disappointed!' },
+  { name: 'Varsha Govindani', note: 'Returning client', quote: 'I’ve been going to Deepali for many years, and she never disappoints! Her beautiful henna designs, attention to detail, and warm personality make every experience special. I absolutely love her work and highly recommend her!' },
+  { name: 'Jann Hak', note: 'Private party', quote: 'Excellent! Deepali was patient and kind and very professional. We enjoyed her company and her skills were above and beyond!' },
+  { name: 'Sheetal Shah', note: 'Events', quote: 'Amazing henna and very professional. Beautiful designs for all of our events.' },
+]
+
+function Stars() {
+  return <span className="stars" role="img" aria-label="5 out of 5 stars">{'★★★★★'}</span>
+}
+
+function Testimonials() {
+  return (
+    <section className="testimonials" id="reviews" aria-labelledby="reviews-title">
+      <div className="testimonials-head" data-reveal>
+        <h2 id="reviews-title">Kind words from<br /><em>our clients.</em></h2>
+        <a className="testimonials-score" href={googleReviewsUrl} target="_blank" rel="noreferrer">
+          <strong>5.0</strong>
+          <span><Stars /><small>42 Google reviews</small></span>
+          <ArrowIcon />
+        </a>
+      </div>
+      <div className="testimonial-grid">
+        {testimonials.map((item, index) => (
+          <figure className="testimonial" key={item.name} data-reveal style={{ transitionDelay: `${(index % 3) * 80}ms` }}>
+            <Stars />
+            <blockquote>{item.quote}</blockquote>
+            <figcaption><span className="testimonial-avatar" aria-hidden="true">{item.name[0]}</span><span><strong>{item.name}</strong><small>{item.note} · Google review</small></span></figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function LandingPage() {
+  useScrollReveal()
   const portfolio = portfolioData()
   const servicesWhatsApp = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent('Hi Deepali, I would like to inquire about your henna services.')}`
 
@@ -801,10 +920,11 @@ function LandingPage() {
     <div className="landing-page home-page">
       <PublicNav />
       <main>
-        <section className="landing-hero"><picture className="landing-hero-background-picture"><source media="(max-width: 720px)" type="image/webp" srcSet="/optimized/home-hero-mobile.webp" /><source media="(max-width: 720px)" srcSet="/home-hero-mobile.jpg" /><source type="image/webp" srcSet="/optimized/home-hero-desktop.webp" /><img className="landing-hero-background" src="/home-hero-desktop.jpg" alt="Crossed hands with detailed henna against a mustard outfit" width="1024" height="576" fetchPriority="high" decoding="async" /></picture><div className="landing-hero-copy"><h1>Henna for brides<br /><em>and celebrations.</em></h1><p className="landing-hero-intro">Custom mehndi for weddings and gatherings in the Bay Area. Start with recent work or bridal pricing.</p><div className="landing-hero-actions"><a className="landing-primary-cta" href="/work">View work <ArrowIcon /></a><a className="landing-secondary-cta" href="/bridal">Bridal pricing</a></div></div></section>
-        <section className="landing-portfolio" id="portfolio"><div className="landing-section-heading"><div><p className="eyebrow">A curated portfolio</p><h2>Find the feeling<br /><em>you want to wear.</em></h2></div><div className="landing-portfolio-heading-side"><p className="landing-portfolio-note">A selection of Deepali’s finest work.</p><a className="landing-inline-link" href="/work">View all portfolio work <ArrowIcon /></a></div></div><div className="landing-portfolio-grid">{portfolio.map((design) => <div className="landing-portfolio-tile" key={design.id}><PortfolioImage design={design} /></div>)}</div></section>
-        <section className="landing-services"><div className="landing-services-copy"><p className="eyebrow">Services by Ethnic Henna</p><h2>Art for every<br /><em>kind of gathering.</em></h2><p>From intimate celebrations to full bridal stories, every design is drawn with care and shaped around the moment, the people, and the feeling you want to remember.</p><p className="service-area-copy">Based in San Ramon, Ethnic Henna serves bridal celebrations, parties, and custom gatherings across the Bay Area.</p><a className="landing-light-cta" href={servicesWhatsApp} target="_blank" rel="noreferrer">Ask about your occasion <ArrowIcon /></a></div><div className="landing-service-list"><div><span>01</span><strong>Bridal henna</strong><small>Custom coverage for your day</small></div><div><span>02</span><strong>Parties & celebrations</strong><small>Beautiful details for every guest</small></div><div><span>03</span><strong>Group events</strong><small>Memorable art for shared occasions</small></div></div></section>
-        <section className="landing-final-cta"><p className="eyebrow">Your story starts here</p><h2>Let’s make it<br /><em>beautifully yours.</em></h2><a className="landing-primary-cta" href="/designs">Browse the design menu <ArrowIcon /></a></section>
+        <HomeHero />
+        <section className="landing-portfolio" id="portfolio"><div className="landing-section-heading"><div><h2>Find the feeling<br /><em>you want to wear.</em></h2></div><div className="landing-portfolio-heading-side"><p className="landing-portfolio-note">A selection of Deepali’s finest work.</p><a className="landing-inline-link" href="/work">View all portfolio work <ArrowIcon /></a></div></div><div className="landing-portfolio-grid">{portfolio.map((design, index) => <a className="landing-portfolio-tile" href="/work" key={design.id} data-reveal style={{ transitionDelay: `${(index % 4) * 70}ms` }} aria-label="View the full portfolio"><PortfolioImage design={design} /><span className="tile-cue">View work <ArrowIcon /></span></a>)}</div></section>
+        <Testimonials />
+        <section className="landing-services"><div className="landing-services-copy"><h2>Art for every<br /><em>kind of gathering.</em></h2><p>From intimate celebrations to full bridal stories, every design is drawn with care and shaped around the moment, the people, and the feeling you want to remember.</p><p className="service-area-copy">Based in San Ramon, Ethnic Henna serves bridal celebrations, parties, and custom gatherings across the Bay Area.</p><a className="landing-light-cta" href={servicesWhatsApp} target="_blank" rel="noreferrer">Ask about your occasion <ArrowIcon /></a></div><div className="landing-service-list"><div><span>01</span><strong>Bridal henna</strong><small>Custom coverage for your day</small></div><div><span>02</span><strong>Parties & celebrations</strong><small>Beautiful details for every guest</small></div><div><span>03</span><strong>Group events</strong><small>Memorable art for shared occasions</small></div></div></section>
+        <section className="landing-final-cta"><h2>Let’s make it<br /><em>beautifully yours.</em></h2><a className="landing-primary-cta" href="/designs">Browse the design menu <ArrowIcon /></a></section>
       </main>
       <SiteFooter />
     </div>
@@ -819,10 +939,10 @@ function BridalPage() {
     <div className="bridal-page landing-page">
       <PublicNav current="bridal" />
       <main>
-        <section className="public-hero bridal-hero"><picture className="public-hero-background-picture"><source media="(max-width: 720px)" type="image/webp" srcSet="/optimized/bridal-hero-mobile.webp" /><source media="(max-width: 720px)" srcSet="/bridal-hero-mobile.jpg" /><source type="image/webp" srcSet="/optimized/bridal-hero-desktop.webp" /><img className="public-hero-background" src="/bridal-hero-desktop.jpg" alt="Bridal henna on hands styled with colorful chooda against a ceremony backdrop" width="1024" height="576" loading="eager" fetchPriority="high" decoding="async" /></picture><div className="public-hero-copy"><h1>Bridal henna<br /><em>for your wedding.</em></h1><p>Coverage is custom to your celebration. We’ll confirm pricing after we talk through the design.</p><a className="landing-primary-cta" href={bridalWhatsApp} target="_blank" rel="noreferrer">Message on WhatsApp <ArrowIcon /></a></div></section>
-        <section className="bridal-service-rate"><div><p className="eyebrow">Bridal service</p><h2>Thoughtful coverage,<br /><em>beautifully considered.</em></h2></div><div className="bridal-rate-number"><span>Bridal service</span><strong>$120</strong><p>per hour + travel</p></div></section>
-        <section className="bridal-packages"><div className="bridal-heading"><div><p className="eyebrow">Choose your coverage</p><h2>Made to meet<br /><em>your moment.</em></h2></div><p>Each length is a starting point for a custom conversation. We’ll shape the final design around your preferences and celebration.</p></div><div className="bridal-package-layout"><div className="bridal-illustration"><img src="/bridal-lengths.png" alt="Hand and arm illustrations showing bridal henna coverage lengths one through five" /><p>Coverage guide · Lengths 1–5</p></div><div className="bridal-pricing" aria-label="Bridal henna package pricing">{bridalPackages.map(([length, price]) => <div className="bridal-price-row" key={length}><span>{length}</span><strong>{price}</strong></div>)}<p className="bridal-pricing-note">Final pricing is confirmed after discussing your design, coverage, and event details.</p></div></div></section>
-        <section className="landing-final-cta"><p className="eyebrow">Your bridal story starts here</p><h2>Let’s make it<br /><em>beautifully yours.</em></h2><a className="landing-primary-cta" href={bridalWhatsApp} target="_blank" rel="noreferrer">Inquire on WhatsApp <ArrowIcon /></a></section>
+        <section className="public-hero bridal-hero"><picture className="public-hero-background-picture"><source media="(max-width: 720px)" type="image/webp" srcSet="/optimized/bridal-hero-mobile.webp" /><source media="(max-width: 720px)" srcSet="/bridal-hero-mobile.jpg" /><source type="image/webp" srcSet="/optimized/bridal-hero-desktop.webp" /><img className="public-hero-background" src="/bridal-hero-desktop.jpg" alt="Bridal henna on hands styled with colorful chooda against a ceremony backdrop" width="1024" height="576" loading="eager" fetchpriority="high" decoding="async" /></picture><div className="public-hero-copy"><h1>Bridal henna<br /><em>for your wedding.</em></h1><p>Coverage is custom to your celebration. We’ll confirm pricing after we talk through the design.</p><a className="landing-primary-cta" href={bridalWhatsApp} target="_blank" rel="noreferrer">Message on WhatsApp <ArrowIcon /></a></div></section>
+        <section className="bridal-service-rate"><div><h2>Thoughtful coverage,<br /><em>beautifully considered.</em></h2></div><div className="bridal-rate-number"><span>Bridal service</span><strong>$120</strong><p>per hour + travel</p></div></section>
+        <section className="bridal-packages"><div className="bridal-heading"><div><h2>Made to meet<br /><em>your moment.</em></h2></div><p>Each length is a starting point for a custom conversation. We’ll shape the final design around your preferences and celebration.</p></div><div className="bridal-package-layout"><div className="bridal-illustration"><img src="/bridal-lengths.png" alt="Hand and arm illustrations showing bridal henna coverage lengths one through five" /><p>Coverage guide · Lengths 1–5</p></div><div className="bridal-pricing" aria-label="Bridal henna package pricing">{bridalPackages.map(([length, price]) => <div className="bridal-price-row" key={length}><span>{length}</span><strong>{price}</strong></div>)}<p className="bridal-pricing-note">Final pricing is confirmed after discussing your design, coverage, and event details.</p></div></div></section>
+        <section className="landing-final-cta"><h2>Let’s make it<br /><em>beautifully yours.</em></h2><a className="landing-primary-cta" href={bridalWhatsApp} target="_blank" rel="noreferrer">Inquire on WhatsApp <ArrowIcon /></a></section>
       </main>
       <SiteFooter />
     </div>
@@ -830,13 +950,18 @@ function BridalPage() {
 }
 
 function WorkPage() {
+  useScrollReveal()
   const portfolio = portfolioData()
   const [selectedImage, setSelectedImage] = useState(null)
+  const selectedIndex = selectedImage ? portfolio.findIndex((item) => item.id === selectedImage.id) : -1
+  const stepImage = (step) => setSelectedImage(portfolio[(selectedIndex + step + portfolio.length) % portfolio.length])
 
   useEffect(() => {
     if (!selectedImage) return undefined
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') setSelectedImage(null)
+      if (event.key === 'ArrowRight') setSelectedImage((current) => portfolio[(portfolio.findIndex((item) => item.id === current.id) + 1) % portfolio.length])
+      if (event.key === 'ArrowLeft') setSelectedImage((current) => portfolio[(portfolio.findIndex((item) => item.id === current.id) - 1 + portfolio.length) % portfolio.length])
     }
     document.body.style.overflow = 'hidden'
     document.addEventListener('keydown', handleKeyDown)
@@ -850,11 +975,11 @@ function WorkPage() {
     <div className="work-detail-page landing-page">
       <PublicNav current="work" />
       <main>
-        <section className="public-hero work-detail-hero"><picture className="public-hero-background-picture"><source media="(max-width: 720px)" type="image/webp" srcSet="/optimized/work-hero-mobile.webp" /><source media="(max-width: 720px)" srcSet="/work-hero-mobile.jpg" /><source type="image/webp" srcSet="/optimized/work-hero-desktop.webp" /><img className="public-hero-background" src="/work-hero-desktop.jpg" alt="Raised henna-adorned hands against marigold garlands, brass lamps, and ceremony light" width="1024" height="576" loading="eager" fetchPriority="high" decoding="async" /></picture><div className="public-hero-copy"><h1>Selected henna<br /><em>from recent work.</em></h1><p>Bridal coverage, guest work, and small motifs from recent appointments. Browse the photos, then get in touch for your own.</p><a className="landing-primary-cta" href="#portfolio-work">View photos <ArrowIcon /></a></div></section>
-        <section className="work-detail-gallery" id="portfolio-work" aria-label="Curated portfolio gallery">{portfolio.map((design, index) => <figure className="work-detail-photo" key={design.id}><button className="work-detail-photo-button" onClick={() => setSelectedImage(design)} aria-label={`Open ${design.alt}`}><PortfolioImage design={design} loading={index > 2 ? 'lazy' : 'eager'} /></button></figure>)}</section>
-        <section className="work-detail-cta"><p className="eyebrow">Looking for your own?</p><h2>Let’s create something<br /><em>beautifully yours.</em></h2><div><a className="landing-primary-cta" href="/designs">Design by Pricing <ArrowIcon /></a><a className="landing-secondary-cta" href="/bridal">Explore bridal work</a></div></section>
+        <section className="public-hero work-detail-hero"><picture className="public-hero-background-picture"><source media="(max-width: 720px)" type="image/webp" srcSet="/optimized/work-hero-mobile.webp" /><source media="(max-width: 720px)" srcSet="/work-hero-mobile.jpg" /><source type="image/webp" srcSet="/optimized/work-hero-desktop.webp" /><img className="public-hero-background" src="/work-hero-desktop.jpg" alt="Raised henna-adorned hands against marigold garlands, brass lamps, and ceremony light" width="1024" height="576" loading="eager" fetchpriority="high" decoding="async" /></picture><div className="public-hero-copy"><h1>Selected henna<br /><em>from recent work.</em></h1><p>Bridal coverage, guest work, and small motifs from recent appointments. Browse the photos, then get in touch for your own.</p><a className="landing-primary-cta" href="#portfolio-work">View photos <ArrowIcon /></a></div></section>
+        <section className="work-detail-gallery" id="portfolio-work" aria-label="Curated portfolio gallery">{portfolio.map((design, index) => <figure className="work-detail-photo" key={design.id} data-reveal style={{ transitionDelay: `${(index % 4) * 60}ms` }}><button className="work-detail-photo-button" onClick={() => setSelectedImage(design)} aria-label={`Open ${design.alt}`}><PortfolioImage design={design} loading={index > 2 ? 'lazy' : 'eager'} /></button></figure>)}</section>
+        <section className="work-detail-cta"><h2>Let’s create something<br /><em>beautifully yours.</em></h2><div><a className="landing-primary-cta" href="/designs">Design by Pricing <ArrowIcon /></a><a className="landing-secondary-cta" href="/bridal">Explore bridal work</a></div></section>
       </main>
-      {selectedImage && <div className="work-image-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedImage(null) }}><div className="work-image-dialog" role="dialog" aria-modal="true" aria-label={selectedImage.alt}><button className="work-image-close" onClick={() => setSelectedImage(null)} autoFocus aria-label="Close image preview">×</button><img src={selectedImage.src} alt={selectedImage.alt} /></div></div>}
+      {selectedImage && <div className="work-image-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedImage(null) }}><div className="work-image-dialog" role="dialog" aria-modal="true" aria-label={selectedImage.alt}><button className="work-image-close" onClick={() => setSelectedImage(null)} autoFocus aria-label="Close image preview">×</button><img src={selectedImage.src} alt={selectedImage.alt} /><button className="work-image-nav work-image-prev" onClick={() => stepImage(-1)} aria-label="Previous photo"><ArrowIcon direction="left" /></button><button className="work-image-nav work-image-next" onClick={() => stepImage(1)} aria-label="Next photo"><ArrowIcon /></button><span className="work-image-count">{selectedIndex + 1} / {portfolio.length}</span></div></div>}
       <SiteFooter />
     </div>
   )
@@ -866,11 +991,11 @@ function EventsPage() {
     <div className="events-page landing-page">
       <PublicNav current="events" />
       <main>
-        <section className="public-hero events-hero"><picture className="public-hero-background-picture"><source media="(max-width: 720px)" type="image/webp" srcSet="/optimized/events-hero-mobile.webp" /><source media="(max-width: 720px)" srcSet="/events-hero-mobile.jpg" /><source type="image/webp" srcSet="/optimized/events-hero-desktop.webp" /><img className="public-hero-background" src="/events-hero-desktop.jpg" alt="Paired henna hands resting on red and gold silk for a celebration" width="1024" height="576" loading="eager" fetchPriority="high" decoding="async" /></picture><div className="public-hero-copy"><h1>Henna for<br /><em>your guests.</em></h1><p>Weddings, birthdays, parties, and group gatherings. Pricing is hourly, plus travel.</p><a className="landing-primary-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Get a quote <ArrowIcon /></a></div></section>
-        <section className="events-overview"><div><p className="eyebrow">A personalized experience</p><h2>Every guest leaves<br /><em>with a memento.</em></h2></div><p>Beyond individual sessions, Deepali creates a sophisticated experience for your guests, ensuring that each design feels personal and each celebration feels beautifully considered.</p></section>
-        <section className="events-rate-section"><div className="events-rate-copy"><p className="eyebrow">Hourly event service</p><h2>Bring Ethnic Henna<br /><em>to your occasion.</em></h2><p>For regular events such as weddings, birthdays, parties, and group gatherings, pricing is based on the time needed for your event, plus travel. Contact Deepali for a quote tailored to your celebration.</p><a className="landing-light-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Discuss your event details <ArrowIcon /></a></div><div className="events-rate-card"><span>Event pricing</span><strong>By<br />inquiry</strong><p>Hourly service + travel</p></div></section>
-        <section className="events-list-section"><p className="eyebrow">Great for</p><div className="events-list"><span><b>01</b> Weddings</span><span><b>02</b> Birthdays</span><span><b>03</b> Parties</span><span><b>04</b> Group celebrations</span></div></section>
-        <section className="landing-final-cta"><p className="eyebrow">Plan something memorable</p><h2>Let’s create a<br /><em>beautiful gathering.</em></h2><a className="landing-primary-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Start an event inquiry <ArrowIcon /></a></section>
+        <section className="public-hero events-hero"><picture className="public-hero-background-picture"><source media="(max-width: 720px)" type="image/webp" srcSet="/optimized/events-hero-mobile.webp" /><source media="(max-width: 720px)" srcSet="/events-hero-mobile.jpg" /><source type="image/webp" srcSet="/optimized/events-hero-desktop.webp" /><img className="public-hero-background" src="/events-hero-desktop.jpg" alt="Paired henna hands resting on red and gold silk for a celebration" width="1024" height="576" loading="eager" fetchpriority="high" decoding="async" /></picture><div className="public-hero-copy"><h1>Henna for<br /><em>your guests.</em></h1><p>Weddings, birthdays, parties, and group gatherings. Pricing is hourly, plus travel.</p><a className="landing-primary-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Get a quote <ArrowIcon /></a></div></section>
+        <section className="events-overview"><div><h2>Every guest leaves<br /><em>with a memento.</em></h2></div><p>Beyond individual sessions, Deepali creates a sophisticated experience for your guests, ensuring that each design feels personal and each celebration feels beautifully considered.</p></section>
+        <section className="events-rate-section"><div className="events-rate-copy"><h2>Bring Ethnic Henna<br /><em>to your occasion.</em></h2><p>For regular events such as weddings, birthdays, parties, and group gatherings, pricing is based on the time needed for your event, plus travel. Contact Deepali for a quote tailored to your celebration.</p><a className="landing-light-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Discuss your event details <ArrowIcon /></a></div><div className="events-rate-card"><span>Event pricing</span><strong>By<br />inquiry</strong><p>Hourly service + travel</p></div></section>
+        <section className="events-list-section"><div className="events-list"><span><b>01</b> Weddings</span><span><b>02</b> Birthdays</span><span><b>03</b> Parties</span><span><b>04</b> Group celebrations</span></div></section>
+        <section className="landing-final-cta"><h2>Let’s create a<br /><em>beautiful gathering.</em></h2><a className="landing-primary-cta" href={eventsWhatsApp} target="_blank" rel="noreferrer">Start an event inquiry <ArrowIcon /></a></section>
       </main>
       <SiteFooter />
     </div>
@@ -892,10 +1017,10 @@ function App() {
     <div className="designs-page landing-page">
       <PublicNav current="pricing" />
       <main id="top">
-        <section className="public-hero designs-hero"><picture className="public-hero-background-picture"><source media="(max-width: 720px)" type="image/webp" srcSet="/optimized/designs-hero-mobile.webp" /><source media="(max-width: 720px)" srcSet="/designs-hero-mobile.jpg" /><source type="image/webp" srcSet="/optimized/designs-hero-desktop.webp" /><img className="public-hero-background" src="/designs-hero-desktop.jpg" alt="Paired henna hands reaching into warm candlelight beside flowers and carved wood" width="1024" height="576" loading="eager" fetchPriority="high" decoding="async" /></picture><div className="public-hero-copy"><h1>Designs<br /><em>by price.</em></h1><p>Choose a $15, $20, or $25 design. Send Deepali the design number on WhatsApp.</p><a href="#collections" className="landing-primary-cta">See collections <ArrowIcon /></a></div></section>
-        <section className="collections-section" id="collections"><div className="section-heading"><div><p className="eyebrow">Choose your collection</p><h2>Three ways to wear<br /><em>your story.</em></h2></div><p>Start with a price point, then tap any design to see it up close.</p></div><div className="collection-grid">{collections.map((collection) => <CollectionCard key={collection.price} collection={collection} onSelect={selectCollection} />)}</div></section>
-        {activeCollection && <section className="gallery-section gallery-enter" ref={galleryRef} id="gallery" aria-labelledby="gallery-title"><div className="gallery-heading"><div><p className="eyebrow">Your selection</p><h2 id="gallery-title">The {activeCollection.label} collection</h2></div><button className="change-collection" onClick={() => { setActivePrice(null); document.querySelector('#collections')?.scrollIntoView({ behavior: 'smooth' }) }}>Change price <span>↗</span></button></div><div className="gallery-grid">{activeCollection.designs.map((design, index) => <button className="design-tile" key={design.id} onClick={() => openDesign(activeCollection, index)} aria-label={`Open design ${design.id}, ${activeCollection.label}`}><img src={design.src} alt={design.alt} loading="lazy" /><span className="design-number">{design.id}</span><span className="view-design">View <ArrowIcon /></span></button>)}</div></section>}
-        <section className="closing-section"><div className="closing-mark">✦</div><p className="eyebrow">The final touch</p><h2>Found one<br /><em>you love?</em></h2><p>Send Deepali the design number on WhatsApp and start your conversation.</p><a className="whatsapp-button whatsapp-button-dark" href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer"><WhatsAppIcon /> Say hello on WhatsApp</a></section>
+        <section className="public-hero designs-hero"><picture className="public-hero-background-picture"><source media="(max-width: 720px)" type="image/webp" srcSet="/optimized/designs-hero-mobile.webp" /><source media="(max-width: 720px)" srcSet="/designs-hero-mobile.jpg" /><source type="image/webp" srcSet="/optimized/designs-hero-desktop.webp" /><img className="public-hero-background" src="/designs-hero-desktop.jpg" alt="Paired henna hands reaching into warm candlelight beside flowers and carved wood" width="1024" height="576" loading="eager" fetchpriority="high" decoding="async" /></picture><div className="public-hero-copy"><h1>Designs<br /><em>by price.</em></h1><p>Choose a $15, $20, or $25 design. Send Deepali the design number on WhatsApp.</p><a href="#collections" className="landing-primary-cta">See collections <ArrowIcon /></a></div></section>
+        <section className="collections-section" id="collections"><div className="section-heading"><div><h2>Three ways to wear<br /><em>your story.</em></h2></div><p>Start with a price point, then tap any design to see it up close.</p></div><div className="collection-grid">{collections.map((collection) => <CollectionCard key={collection.price} collection={collection} onSelect={selectCollection} />)}</div></section>
+        {activeCollection && <section className="gallery-section gallery-enter" ref={galleryRef} id="gallery" aria-labelledby="gallery-title"><div className="gallery-heading"><div><h2 id="gallery-title">The {activeCollection.label} collection</h2></div><button className="change-collection" onClick={() => { setActivePrice(null); document.querySelector('#collections')?.scrollIntoView({ behavior: 'smooth' }) }}>Change price <span>↗</span></button></div><div className="gallery-grid">{activeCollection.designs.map((design, index) => <button className="design-tile" key={design.id} onClick={() => openDesign(activeCollection, index)} aria-label={`Open design ${design.id}, ${activeCollection.label}`}><img src={design.src} alt={design.alt} loading="lazy" /><span className="design-number">{design.id}</span><span className="view-design">View <ArrowIcon /></span></button>)}</div></section>}
+        <section className="closing-section"><div className="closing-mark">✦</div><h2>Found one<br /><em>you love?</em></h2><p>Send Deepali the design number on WhatsApp and start your conversation.</p><a className="whatsapp-button whatsapp-button-dark" href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer"><WhatsAppIcon /> Say hello on WhatsApp</a></section>
       </main>
       <SiteFooter />
       {selected && <Lightbox selected={selected} onClose={() => setSelected(null)} onPrevious={() => moveDesign(-1)} onNext={() => moveDesign(1)} />}
