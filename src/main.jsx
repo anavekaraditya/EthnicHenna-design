@@ -245,7 +245,7 @@ function BrandHomeLink({ className = 'wordmark' }) {
 }
 
 function PublicNav({ current }) {
-  const links = [['work', 'Work', 'Work', '/work'], ['pricing', 'Design by Pricing', 'Pricing', '/designs'], ['bridal', 'Bridal', 'Bridal', '/bridal'], ['events', 'Events', 'Events', '/events']]
+  const links = [['work', 'Work', 'Work', '/work'], ['bridal', 'Bridal', 'Bridal', '/bridal'], ['events', 'Events', 'Events', '/events']]
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24)
@@ -265,7 +265,6 @@ function PublicNav({ current }) {
 const heroSlides = [
   { key: 'home', image: 'home-hero', line1: 'Henna for brides', line2: 'and celebrations.', href: '/work', cta: 'View work', label: 'Featured', alt: 'Crossed hands with detailed henna against a mustard outfit' },
   { key: 'bridal', image: 'bridal-hero', line1: 'Bridal henna', line2: 'for your wedding.', href: '/bridal', cta: 'Bridal pricing', label: 'Bridal', alt: 'Bridal henna on hands styled with colorful chooda against a ceremony backdrop' },
-  { key: 'designs', image: 'designs-hero', line1: 'Designs', line2: 'by price.', href: '/designs', cta: 'Browse designs', label: 'Designs', alt: 'Paired henna hands reaching into warm candlelight beside flowers and carved wood' },
   { key: 'events', image: 'events-hero', line1: 'Henna for', line2: 'your guests.', href: '/events', cta: 'Plan an event', label: 'Events', alt: 'Paired henna hands resting on red and gold silk for a celebration' },
 ]
 const heroSlideMs = 6500
