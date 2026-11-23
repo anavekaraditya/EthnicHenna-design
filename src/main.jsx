@@ -1,6 +1,7 @@
 import React, { StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Analytics } from '@vercel/analytics/react'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 import { createPalmMesh, drawAnchoredAsset, drawFullHandMesh, drawGloveTemplate, drawPalmMesh, drawPreparedHand, drawRigidHandArt, hasTrackablePalm, projectLandmarksToDisplay, smoothPoints } from './ar/palmMesh.js'
 import { applySeoMetadata, getPageKey } from './seo.js'
@@ -1038,7 +1039,7 @@ const isWorkRoute = pageKey === 'work'
 const isHomeRoute = pageKey === 'home'
 const isQueueRoute = pageKey === 'queue'
 const isQueueManageRoute = pageKey === 'queue-manage'
-createRoot(document.getElementById('root')).render(<StrictMode>{isQueueManageRoute ? <QueueManagePage /> : isQueueRoute ? <QueueGuestPage /> : isAdminRoute ? <AdminRoute /> : isDesignsRoute ? <App /> : isBridalRoute ? <BridalPage /> : isEventsRoute ? <EventsPage /> : isWorkRoute ? <WorkPage /> : isHomeRoute ? <LandingPage /> : <LandingPage />}<Analytics /></StrictMode>)
+createRoot(document.getElementById('root')).render(<StrictMode>{isQueueManageRoute ? <QueueManagePage /> : isQueueRoute ? <QueueGuestPage /> : isAdminRoute ? <AdminRoute /> : isDesignsRoute ? <App /> : isBridalRoute ? <BridalPage /> : isEventsRoute ? <EventsPage /> : isWorkRoute ? <WorkPage /> : isHomeRoute ? <LandingPage /> : <LandingPage />}<Analytics /><SpeedInsights /></StrictMode>)
 
 function AdminRoute() {
   const [authenticated, setAuthenticated] = useState(() => sessionStorage.getItem(adminSessionKey) === 'active')
